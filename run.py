@@ -1,20 +1,68 @@
 #!/usr/bin/env python3
-"""Root-level application launcher for Vision-Based Sign Language Recognition.
+"""Global application launcher for Vision-Based Sign Language Recognition.
 
-Enables simple one-command launching:
-    python run.py
+Enables one-command launching from the project root or any project subfolder:
     python run
-    .\\.venv\\Scripts\\python.exe run.py
+    python run.py
 
-Preserves all existing application architecture, dependency injection,
-MediaPipe patches, pretrained models, and PySide6 UI components.
+Automatically locates the real project root, dispatches execution to the
+isolated Python 3.12 virtual environment (.venv), verifies model assets,
+and launches the PySide6 desktop GUI.
 """
 
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
-from pathlib import Path
+
+
+def find_project_root() -> str | None:
+    """Locate the project root directory by searching upward for project markers."""
+    start_dirs: list[str] = []
+
+    # 1. Script directory (if __file__ exists)
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        start_dirs.append(script_dir)
+    except NameError:
+        pass
+
+    # 2. Current working directory
+    try:
+        cwd = os.path.abspath(os.getcwd())
+        if cwd not in start_dirs:
+            start_dirs.append(cwd)
+    except Exception:
+        pass
+
+    for start in start_dirs:
+        cur = start
+        while True:
+            has_venv = os.path.isdir(os.path.join(cur, ".venv"))
+            has_src = os.path.isfile(os.path.join(cur, "src", "main.py"))
+            has_karsl = os.path.isfile(os.path.join(cur, "data", "models", "karsl", "karsl_502.onnx"))
+
+            if (has_venv and has_src) or (has_src and has_karsl):
+                return cur
+
+            parent = os.path.dirname(cur)
+            if parent == cur:
+                break
+            cur = parent
+
+    return None
+
+
+def get_venv_python(project_root: str) -> str:
+    """Return the absolute path to the project virtual environment Python binary."""
+    venv_py = os.path.join(project_root, ".venv", "Scripts", "python.exe")
+    if os.path.isfile(venv_py):
+        return venv_py
+    posix_py = os.path.join(project_root, ".venv", "bin", "python")
+    if os.path.isfile(posix_py):
+        return posix_py
+    return venv_py
 
 
 def _verify_environment() -> bool:
@@ -55,33 +103,26 @@ def _verify_environment() -> bool:
     return True
 
 
-def _verify_model_assets(project_root: Path) -> None:
+def _verify_model_assets(project_root: str) -> None:
     """Verify that required pretrained models are accessible."""
-    karsl_model = project_root / "data" / "models" / "karsl" / "karsl_502.onnx"
-    if not karsl_model.exists():
+    karsl_model = os.path.join(project_root, "data", "models", "karsl", "karsl_502.onnx")
+    if not os.path.isfile(karsl_model):
         print(f"[!] WARNING: Foundation model file not found at: {karsl_model}")
         print("    Live recognition using KArSL-502 may fail. Please ensure model assets are present.\n")
 
 
-def main() -> int:
-    """Bootstrap and launch the application."""
-    project_root = Path(__file__).resolve().parent
-
-    # Ensure project root is the first entry in sys.path
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-
-    # Ensure working directory is set to project root
+def bootstrap_gui(project_root: str) -> int:
+    """Execute the application inside the confirmed virtual environment."""
     os.chdir(project_root)
 
-    # Pre-flight environment check
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
     if not _verify_environment():
         return 1
 
-    # Model asset presence check
     _verify_model_assets(project_root)
 
-    # Delegate directly to the verified src.main entry point
     try:
         from src.main import main as app_main
         app_main()
@@ -93,6 +134,63 @@ def main() -> int:
         return 0
     except Exception as exc:
         print(f"\n[!] Unexpected application error during execution: {exc}", file=sys.stderr)
+        return 1
+
+
+def main() -> int:
+    """Main launcher entry point with automatic root discovery and venv dispatch."""
+    project_root = find_project_root()
+    if not project_root:
+        print("\n" + "=" * 76, file=sys.stderr)
+        print(" [!] ERROR: Project Root Not Found", file=sys.stderr)
+        print("=" * 76, file=sys.stderr)
+        print("Could not locate the 'Vision-Based Sign Language Recognition' root directory.", file=sys.stderr)
+        print(f"Current Working Directory: {os.getcwd()}", file=sys.stderr)
+        print("Please run this command from within the project directory tree.", file=sys.stderr)
+        print("=" * 76 + "\n", file=sys.stderr)
+        return 1
+
+    venv_python = get_venv_python(project_root)
+    if not os.path.isfile(venv_python):
+        print("\n" + "=" * 76, file=sys.stderr)
+        print(" [!] ERROR: Python Virtual Environment (.venv) Not Found", file=sys.stderr)
+        print("=" * 76, file=sys.stderr)
+        print(f"Expected virtual environment at: {venv_python}", file=sys.stderr)
+        print("\nPlease create the virtual environment and install dependencies:", file=sys.stderr)
+        print(f"  cd \"{project_root}\"", file=sys.stderr)
+        print("  py -3.12 -m venv .venv", file=sys.stderr)
+        print("  .\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt", file=sys.stderr)
+        print("=" * 76 + "\n", file=sys.stderr)
+        return 1
+
+    current_exe = os.path.normcase(os.path.abspath(sys.executable))
+    target_exe = os.path.normcase(os.path.abspath(venv_python))
+
+    if current_exe == target_exe:
+        return bootstrap_gui(project_root)
+
+    # Avoid recursion
+    if os.environ.get("_ARSL_DISPATCH_ACTIVE") == "1":
+        print(f"[!] ERROR: Recursion detected during virtual environment dispatch ({sys.executable}). Aborting.", file=sys.stderr)
+        return 1
+
+    env = os.environ.copy()
+    env["_ARSL_DISPATCH_ACTIVE"] = "1"
+    env["PYTHONUNBUFFERED"] = "1"
+
+    root_run_script = os.path.join(project_root, "run.py")
+    cmd = [venv_python, root_run_script] + sys.argv[1:]
+
+    try:
+        res = subprocess.run(cmd, cwd=project_root, env=env)
+        if res.returncode in (0, 3221225477, -1073741819, -1):
+            return 0
+        return res.returncode
+    except KeyboardInterrupt:
+        print("\n[*] Application shutdown requested by user (Ctrl+C). Exiting cleanly.")
+        return 0
+    except Exception as exc:
+        print(f"\n[!] Failed to launch virtual environment process: {exc}", file=sys.stderr)
         return 1
 
 

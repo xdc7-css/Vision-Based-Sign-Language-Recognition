@@ -266,7 +266,7 @@ You should see the following files listed:
 ---
 
 ### Step 8: Launch the Application!
-Launch the complete desktop application with a single, simple command from the project root directory:
+Launch the complete desktop application with a single, simple command from the project root or **any project subdirectory** (`src/`, `src/models/`, `src/presentation/`, `tests/`, `docs/`, etc.):
 
 ```powershell
 # Primary one-command launcher (Recommended):
@@ -274,16 +274,31 @@ python run.py
 
 # Or simply:
 python run
-
-# Direct executable path (without activating .venv):
-.\.venv\Scripts\python.exe run.py
-
-# Alternative direct module execution:
-python -m src.main
 ```
 
 > [!TIP]
-> **One-Command Startup:** `run.py` automatically performs pre-flight checks to ensure all required dependencies (`PySide6`, `mediapipe`, `onnxruntime`, `opencv-python`) and AI model assets are present before launching the graphical interface.
+> **Zero Manual Setup & Automatic Virtual Environment Detection:**
+> - **Runs from Any Subdirectory:** You can run `python run` or `python run.py` directly from the project root or any subfolder (`src/`, `src/models/`, `tests/`, etc.) without typing `cd` to navigate to the project root.
+> - **Automatic `.venv` Selection:** If invoked via system Python, the launcher automatically detects the project's isolated Python 3.12 virtual environment at `.\.venv\Scripts\python.exe` and re-dispatches execution into it. You do **not** need to manually run `.\.venv\Scripts\Activate.ps1`.
+> - **Pre-Flight Asset Checks:** `run.py` verifies all required dependencies (`PySide6`, `mediapipe`, `onnxruntime`, `opencv-python`) and AI model checkpoints before launching the PySide6 Qt GUI.
+
+#### Optional: Project-Wide Subdirectory Discovery Setup
+If you create new nested folders inside the project, you can run the one-time launcher configuration tool:
+```powershell
+python scripts\setup_launcher.py
+# Or in PowerShell:
+.\scripts\setup_launcher.ps1
+```
+This registers the project directory in your user-level environment so `python run` works across any newly created subdirectories without manual configuration.
+
+#### Alternative Direct Launch Methods:
+```powershell
+# Direct virtual environment executable path:
+.\.venv\Scripts\python.exe run.py
+
+# Direct module execution:
+python -m src.main
+```
 
 The dark-themed application window will open, presenting the **System Dashboard**.
 
@@ -634,7 +649,8 @@ arabic sign language/
 ├── requirements.txt                      # PIP dependency specifications
 ├── run                                   # Companion root-level launch script
 ├── run.py                                # Root-level application launcher & pre-flight checker
-└── setup.py                              # Package installation configuration
+├── setup.py                              # Package installation configuration
+└── sitecustomize.py                      # Global project-wide launcher discovery hook
 ```
 
 ---

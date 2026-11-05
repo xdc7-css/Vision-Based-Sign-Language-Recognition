@@ -359,6 +359,12 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Handle application shutdown — clean up all resources."""
+        if hasattr(self, "_recognition_tab") and self._recognition_tab:
+            try:
+                self._recognition_tab.close()
+            except Exception:
+                pass
+
         if self._source_use_cases:
             self._source_use_cases.stop_source()
 

@@ -18,14 +18,26 @@ Integrates all modules:
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
 import sys
-from pathlib import Path
 from typing import Optional
 
-# Ensure project root is in sys.path when executed directly as `python src/main.py`
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
+# Ensure project root is in sys.path
+_cur_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_cur_dir)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+# Auto-dispatch to virtual environment if executed via system Python
+if __name__ == "__main__":
+    _venv_py = os.path.join(_project_root, ".venv", "Scripts", "python.exe")
+    if os.path.isfile(_venv_py) and os.path.normcase(os.path.abspath(sys.executable)) != os.path.normcase(os.path.abspath(_venv_py)):
+        if os.environ.get("_ARSL_MAIN_DISPATCH") != "1":
+            _env = os.environ.copy()
+            _env["_ARSL_MAIN_DISPATCH"] = "1"
+            _res = subprocess.run([_venv_py, "-m", "src.main"] + sys.argv[1:], cwd=_project_root, env=_env)
+            sys.exit(_res.returncode)
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
@@ -69,19 +81,19 @@ def setup_logging(log_level: str = "INFO") -> None:
 def create_directories() -> None:
     """Ensure required data directories exist for all dialects."""
     dirs = [
-        Path("data/models/iraqi"),
-        Path("data/models/saudi"),
-        Path("data/models/egyptian"),
-        Path("data/models/general"),
-        Path("data/datasets/iraqi"),
-        Path("data/datasets/saudi"),
-        Path("data/datasets/egyptian"),
-        Path("data/cache"),
-        Path("data/vocabulary"),
-        Path("data/logs"),
+        "data/models/iraqi",
+        "data/models/saudi",
+        "data/models/egyptian",
+        "data/models/general",
+        "data/datasets/iraqi",
+        "data/datasets/saudi",
+        "data/datasets/egyptian",
+        "data/cache",
+        "data/vocabulary",
+        "data/logs",
     ]
     for d in dirs:
-        d.mkdir(parents=True, exist_ok=True)
+        os.makedirs(os.path.join(_project_root, d), exist_ok=True)
 
 
 def build_services(state: AppState) -> dict:
@@ -278,6 +290,14 @@ def bootstrap() -> None:
     services["overlay_manager"].initialize()
 
     services["logger"].info("Application started successfully")
+    if "ARSL_TEST_TIMEOUT" in os.environ:
+        timeout_ms = int(os.environ["ARSL_TEST_TIMEOUT"])
+        from PySide6.QtCore import QTimer
+        def _auto_exit():
+            window.close()
+            app.quit()
+        QTimer.singleShot(timeout_ms, _auto_exit)
+
     sys.exit(app.exec())
 
 
