@@ -36,16 +36,10 @@ This graduation project was designed, engineered, and evaluated by the following
 | :-: | :--- | :--- | :--- |
 | 1 | **Adian Abdulsattar Abduljabbar Jasim** | أديان عبد الستار عبد الجبار جاسم | Computer Vision, Keypoint Extraction & Dataset Studio |
 | 2 | **Rawan Issam Ghalib Joudi** | روان عصام غالب جودي | Machine Learning, Model Training & Dynamic Sequences |
-
-
-
-
-
-
-
-
-
 | 3 | **Mustafa Nasser Mahmoud Saleh** | مصطفى ناصر محمود صالح | System Architecture, Win32 Overlay & Speech Synthesis |
+
+---
+
 ## Table of Contents
 1. [Project Overview](#1-project-overview)
 2. [Hardware & Software System Requirements](#2-hardware--software-system-requirements)
