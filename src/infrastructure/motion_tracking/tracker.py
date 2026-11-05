@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import math
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from src.domain.hand import Hand, HandLandmarkType
@@ -109,7 +108,6 @@ class MotionTracker:
         if track is None or not track.states:
             return None
 
-        speeds = [s.velocity.speed for s in track.states]
         directions = [s.velocity.direction for s in track.states if s.velocity.speed > 0.001]
         pause_frames = sum(1 for s in track.states if s.velocity.speed < self._config.pause_speed_threshold)
 

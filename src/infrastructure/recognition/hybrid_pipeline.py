@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from src.domain.hand import Hand
 from src.domain.motion import HandMotionTrack
 from src.domain.recognition import GestureCategory, RecognitionResult
-from src.domain.text import GestureInputType, TextCommand
+from src.domain.text import TextCommand
 from src.infrastructure.recognition.dynamic_recognizer import DynamicSignRecognizer
 from src.infrastructure.recognition.static_recognizer import StaticSignRecognizer
 from src.infrastructure.recognition.word_recognizer import WordRecognizer

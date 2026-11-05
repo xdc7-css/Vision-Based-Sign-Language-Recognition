@@ -8,7 +8,6 @@ from src.domain.entities import (
     DialectInfo,
     Frame,
     SourceProperties,
-    VideoSourceType,
 )
 
 

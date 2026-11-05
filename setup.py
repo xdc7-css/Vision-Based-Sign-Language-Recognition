@@ -13,7 +13,7 @@ setup(
         "opencv-python>=4.8.0",
         "numpy>=1.24.0",
         "mss>=9.0.0",
-        "pywin32>=306",
+        "pywin32>=306; sys_platform == 'win32'",
         "Pillow>=10.0.0",
         "mediapipe>=0.10.0",
         "PyYAML>=6.0",

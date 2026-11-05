@@ -8,12 +8,9 @@ from typing import Any
 import numpy as np
 
 from src.domain.hand import (
-    FINGER_LANDMARKS,
-    HAND_CONNECTIONS,
     Hand,
     HandLandmark,
     HandLandmarkType,
-    Handedness,
 )
 
 

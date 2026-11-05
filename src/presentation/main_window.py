@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
     QMainWindow,
     QMenu,
-    QMenuBar,
     QMessageBox,
     QStatusBar,
     QTabWidget,
@@ -138,7 +137,7 @@ class MainWindow(QMainWindow):
         # Dialect menu
         dialect_menu = menubar.addMenu("&Dialect")
         self._dialect_actions: dict[str, QAction] = {}
-        from src.domain.dialect import DialectId, DIALECT_DISPLAY_NAMES
+        from src.domain.dialect import DIALECT_DISPLAY_NAMES
         for did, display in DIALECT_DISPLAY_NAMES.items():
             action = QAction(display, self, checkable=True)
             action.triggered.connect(lambda checked, d=did: self._switch_dialect(d))

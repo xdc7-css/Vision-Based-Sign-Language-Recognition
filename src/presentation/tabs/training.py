@@ -311,8 +311,8 @@ class ModelTrainingTab(QWidget):
         report_lines = [
             f"📊 حالة مجموعة البيانات ({dataset_base.name}):",
             f"  • إجمالي الفئات المفحوصة: {inspection['total_classes']}",
-            f"",
-            f"✅ الفئات المقبولة والمستوفية للشروط (عينتان فأكثر):",
+            "",
+            "✅ الفئات المقبولة والمستوفية للشروط (عينتان فأكثر):",
         ]
 
         if inspection["accepted_classes"]:

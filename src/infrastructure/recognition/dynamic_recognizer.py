@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -19,7 +19,6 @@ try:
 except ImportError:
     torch = None  # type: ignore
 
-from src.domain.hand import Hand
 from src.domain.motion import HandMotionTrack
 from src.domain.recognition import GestureCategory, RecognitionResult
 from src.infrastructure.inference.base import BaseInferenceEngine
@@ -220,7 +219,6 @@ class DynamicSignRecognizer:
         X_val_t = torch.FloatTensor(X_val).to(device)
         y_val_t = torch.LongTensor(y_val).to(device)
         X_test_t = torch.FloatTensor(X_test).to(device)
-        y_test_t = torch.LongTensor(y_test).to(device)
 
         # Create DataLoader for mini-batch training
         train_dataset = TensorDataset(X_train_t, y_train_t)
@@ -232,7 +230,6 @@ class DynamicSignRecognizer:
 
         all_metrics: dict[str, DynamicModelMetrics] = {}
         best_score = -1.0
-        best_arch = ""
 
         for arch in archs:
             if arch not in self.SUPPORTED_ARCHS:
@@ -326,7 +323,6 @@ class DynamicSignRecognizer:
             s = metrics.score()
             if s > best_score:
                 best_score = s
-                best_arch = arch
                 self._model = model
                 self._architecture = arch
                 self._metrics = metrics
@@ -386,8 +382,6 @@ class DynamicSignRecognizer:
     # ── Private ─────────────────────────────────────────────────────
 
     def _build_model(self, architecture: str, n_classes: int):
-        import torch
-        from torch import nn
 
         if architecture == "lstm":
             return _LSTMModel(self._config, n_classes)

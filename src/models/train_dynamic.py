@@ -11,7 +11,6 @@ Supports:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -172,7 +171,7 @@ def train_dynamic_model(
 
     # Print results
     print(f"\n{'='*65}")
-    print(f"  Model Comparison — Dynamic Gesture Recognition")
+    print("  Model Comparison — Dynamic Gesture Recognition")
     print(f"{'='*65}")
     print(f"  {'Arch':<14} {'Accuracy':>10} {'F1':>10} {'Infer(ms)':>10} {'Params':>10} {'Size(KB)':>10}")
     print(f"  {'-'*64}")
@@ -204,7 +203,6 @@ def train_dynamic_model(
             _, preds = torch.max(outputs, 1)
 
         evaluator = ModelEvaluator()
-        from sklearn.metrics import accuracy_score
         models = {best_arch: type("Wrapper", (), {"predict": lambda self, x: preds.cpu().numpy()})()}
         eval_results = evaluator.compare_models(models, X_eval, y_eval, list(le.classes_))
 
@@ -223,7 +221,7 @@ def train_dynamic_model(
             "precision": best.precision if best else 0.0,
             "recall": best.recall if best else 0.0,
         })
-        print(f"  Registered in model registry")
+        print("  Registered in model registry")
     except Exception as e:
         print(f"  Warning: Model registration failed: {e}")
 

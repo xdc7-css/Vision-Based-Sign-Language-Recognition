@@ -1,0 +1,115 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arsl-overlay"
+version = "1.0.0"
+description = "Real-Time Arabic Sign Language Translation Overlay System"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "ArSL Project Team" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Video :: Display",
+]
+
+dependencies = [
+    "PySide6>=6.5.0",
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "mss>=9.0.0",
+    "pywin32>=306; sys_platform == 'win32'",
+    "Pillow>=10.0.0",
+    "mediapipe>=0.10.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+ml = [
+    "scikit-learn>=1.3.0",
+    "joblib>=1.3.0",
+]
+dl = [
+    "torch>=2.0.0",
+    "onnxruntime>=1.15.0",
+]
+arabic = [
+    "arabic-reshaper>=2.1.0",
+    "python-bidi>=0.4.0",
+]
+monitoring = [
+    "psutil>=5.9.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+all = [
+    "scikit-learn>=1.3.0",
+    "joblib>=1.3.0",
+    "torch>=2.0.0",
+    "onnxruntime>=1.15.0",
+    "arabic-reshaper>=2.1.0",
+    "python-bidi>=0.4.0",
+    "psutil>=5.9.0",
+]
+
+[project.scripts]
+arsl-overlay = "src.main:main"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = [
+    ".git",
+    ".venv",
+    ".pytest_cache",
+    "build",
+    "dist",
+    "data",
+    "external",
+    "run",
+    "run.py",
+    "*/run",
+    "*/run.py",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+]
+ignore = [
+    "E501",
+    "E402",
+    "W291",
+    "W293",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"src/**/__init__.py" = ["F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+

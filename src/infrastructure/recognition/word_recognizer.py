@@ -8,11 +8,10 @@ and rejection of uncertain predictions.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 
 from src.domain.hand import Hand
 from src.domain.motion import HandMotionTrack
@@ -24,7 +23,6 @@ from src.domain.recognition import (
     WordVocabulary,
     DEFAULT_VOCABULARY,
 )
-from src.infrastructure.hand_detection.utils import LandmarkProcessor
 from src.infrastructure.recognition.dynamic_recognizer import DynamicSignRecognizer
 from src.infrastructure.recognition.static_recognizer import StaticSignRecognizer
 

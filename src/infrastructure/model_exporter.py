@@ -69,7 +69,6 @@ class ModelExporter:
 
     def quantize(self, onnx_path: str, output_path: Optional[str] = None) -> Optional[str]:
         try:
-            import onnxruntime as ort
             from onnxruntime.quantization import quantize_dynamic, QuantType
 
             out = output_path or onnx_path.replace(".onnx", "_quantized.onnx")

@@ -147,7 +147,7 @@ class ModelEvaluator:
     def print_comparison(results: dict[str, EvaluationResult]) -> None:
         """Pretty-print model comparison results."""
         print(f"\n{'='*65}")
-        print(f"  Model Comparison")
+        print("  Model Comparison")
         print(f"{'='*65}")
         print(f"  {'Model':<12} {'Accuracy':>10} {'Precision':>10} {'Recall':>10} {'F1':>10}")
         print(f"  {'-'*52}")

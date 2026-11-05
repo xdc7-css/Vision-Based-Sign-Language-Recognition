@@ -21,7 +21,6 @@ import logging
 import os
 import subprocess
 import sys
-from typing import Optional
 
 # Ensure project root is in sys.path
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
@@ -30,7 +29,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 # Auto-dispatch to virtual environment if executed via system Python
-if __name__ == "__main__":
+if __name__ == "__main__" and not getattr(sys, "frozen", False):
     _venv_py = os.path.join(_project_root, ".venv", "Scripts", "python.exe")
     if os.path.isfile(_venv_py) and os.path.normcase(os.path.abspath(sys.executable)) != os.path.normcase(os.path.abspath(_venv_py)):
         if os.environ.get("_ARSL_MAIN_DISPATCH") != "1":
@@ -56,7 +55,6 @@ from src.infrastructure.config_manager import ConfigManager
 from src.infrastructure.dialect_manager import DialectManager
 from src.infrastructure.optimization import (
     OptimizationLevel,
-    OptimizationProfile,
     PerformanceOptimizer,
     PRESETS,
 )
@@ -101,7 +99,7 @@ def build_services(state: AppState) -> dict:
 
     # ── Configuration ────────────────────────────────────────────
     config_mgr = ConfigManager(config_dir="config")
-    config = config_mgr.load()
+    config_mgr.load()
     log_level = config_mgr.get("logging.level", "INFO")
     setup_logging(log_level)
 

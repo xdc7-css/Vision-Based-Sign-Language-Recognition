@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import cv2
@@ -115,9 +115,9 @@ class HandDetector:
         if self._config.model_complexity not in (0, 1):
             raise ValueError(f"model_complexity must be 0 (lite) or 1 (full), got {self._config.model_complexity}")
         if not (0.0 < self._config.min_detection_confidence <= 1.0):
-            raise ValueError(f"min_detection_confidence must be in (0, 1]")
+            raise ValueError("min_detection_confidence must be in (0, 1]")
         if not (0.0 < self._config.min_tracking_confidence <= 1.0):
-            raise ValueError(f"min_tracking_confidence must be in (0, 1]")
+            raise ValueError("min_tracking_confidence must be in (0, 1]")
 
     def _initialize_mediapipe(self) -> None:
         try:

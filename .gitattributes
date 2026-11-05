@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.onnx binary
+*.task binary
+*.pkl binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.npy binary
+

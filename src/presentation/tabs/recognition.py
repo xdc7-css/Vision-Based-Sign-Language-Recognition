@@ -5,9 +5,8 @@ import threading
 import time
 from typing import Optional
 
-import cv2
 import numpy as np
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -16,7 +15,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QSizePolicy,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -30,7 +28,6 @@ from src.infrastructure.analytics import AnalyticsEngine
 from src.infrastructure.dialect_manager import DialectManager
 from src.infrastructure.optimization import PerformanceOptimizer
 from src.infrastructure.recognition.hybrid_pipeline import (
-    HybridConfig,
     HybridRecognitionPipeline,
 )
 from src.infrastructure.recognition.karsl_recognizer import (
@@ -38,7 +35,6 @@ from src.infrastructure.recognition.karsl_recognizer import (
     KArSLResult,
 )
 from src.infrastructure.text_builder import ArabicTextBuilder
-from src.infrastructure.video_source_engine import VideoSourceFactory
 from src.presentation.dialogs.karsl_vocab_dialog import KArSLVocabularyDialog
 from src.presentation.widgets import (
     CameraPreview,

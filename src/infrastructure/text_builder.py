@@ -11,7 +11,6 @@ State machine:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from src.domain.text import (
     GestureInputType,

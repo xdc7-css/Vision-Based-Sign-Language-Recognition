@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from src.domain.hand import Hand, HandDetectionResult, HandLandmarkType
+from src.domain.hand import HandDetectionResult
 from src.domain.recognition import GestureCategory
 
 
@@ -70,8 +70,8 @@ class CaptureSession:
             self.landmarks.append(lm_array)
 
             frame_data[f"landmarks_{hand.handedness.value}"] = lm_array.tolist()
-            frame_data[f"handedness"] = hand.handedness.value
-            frame_data[f"confidence"] = hand.confidence
+            frame_data["handedness"] = hand.handedness.value
+            frame_data["confidence"] = hand.confidence
 
         self.frames.append(frame_data)
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import pickle
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -19,7 +19,7 @@ import numpy as np
 from src.domain.hand import Hand
 from src.domain.recognition import RecognitionResult, GestureCategory
 from src.infrastructure.hand_detection.utils import LandmarkProcessor
-from src.infrastructure.inference.base import BaseInferenceEngine, InferenceEngineConfig
+from src.infrastructure.inference.base import BaseInferenceEngine
 
 
 @dataclass

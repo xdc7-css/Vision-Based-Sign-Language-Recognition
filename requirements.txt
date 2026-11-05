@@ -6,7 +6,7 @@ numpy>=1.24.0
 
 # ── Video Sources ───────────────────────────────────────────────
 mss>=9.0.0                          # Screen capture (optional)
-pywin32>=306                        # Window capture Windows-only (optional)
+pywin32>=306; sys_platform == 'win32'  # Window capture Windows-only (optional)
 Pillow>=10.0.0                      # Fallback screen capture
 
 # ── Hand Detection ──────────────────────────────────────────────

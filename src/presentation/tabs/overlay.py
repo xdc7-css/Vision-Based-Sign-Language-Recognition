@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QDoubleSpinBox,
     QFormLayout,
     QFrame,
     QGroupBox,
@@ -21,8 +20,8 @@ from PySide6.QtWidgets import (
 )
 
 from src.application.state import AppState
-from src.infrastructure.overlay_system import OverlayConfig, OverlayManager
-from src.presentation.widgets import CameraPreview, SectionHeader
+from src.infrastructure.overlay_system import OverlayManager
+from src.presentation.widgets import SectionHeader
 
 
 class OverlayTab(QWidget):

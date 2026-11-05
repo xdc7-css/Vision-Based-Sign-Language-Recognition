@@ -120,7 +120,7 @@ DEFAULT_VOCABULARY: list[VocabularyEntry] = [
     VocabularyEntry("go", "اذهب", GestureCategory.DYNAMIC_GESTURE, "Go"),
     VocabularyEntry("sleep", "نوم", GestureCategory.DYNAMIC_GESTURE, "Sleep"),
     # Alphabet
-    *[VocabularyEntry(f"letter_{chr(0x0627 + i) if i < 28 else '?'}", 
+    *[VocabularyEntry(f"letter_{chr(0x0627 + i) if i < 28 else '?'}",
                      chr(0x0627 + i) if i < 28 else "?",
                      GestureCategory.ALPHABET,
                      f"Letter {chr(0x0627 + i) if i < 28 else '?'}")

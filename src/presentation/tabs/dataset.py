@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QSizePolicy,
     QSpinBox,
     QSplitter,
     QVBoxLayout,
@@ -36,13 +35,13 @@ class DatasetCollectionTab(QWidget):
         super().__init__(parent)
         self._state = state
         self._source_use_cases = source_use_cases
-        
+
         # Initialize collectors, detectors, and renderers
         from src.infrastructure.dataset.collector import DatasetCollector
         from src.infrastructure.hand_detection.detector import HandDetector, HandDetectorConfig
         from src.infrastructure.hand_detection.renderer import HandRenderer
         from PySide6.QtCore import QTimer
-        
+
         self._collector = DatasetCollector()
         self._detector = HandDetector(HandDetectorConfig(
             min_detection_confidence=0.30,
@@ -416,7 +415,7 @@ class DatasetCollectionTab(QWidget):
                 if item_lbl == clean_text:
                     exists = True
                     break
-            
+
             if not exists:
                 item = QListWidgetItem(f"  {clean_text}  (0 samples)")
                 self._class_list.addItem(item)
@@ -432,13 +431,13 @@ class DatasetCollectionTab(QWidget):
     def _update_stats_and_list(self) -> None:
         """Scan the dataset directories, update counts for each list item, and update stats cards."""
         total_samples = 0
-        
+
         # Iterate over all items in the list widget and update their sample counts
         for idx in range(self._class_list.count()):
             item = self._class_list.item(idx)
             raw_text = item.text().strip()
             clean_label = re.sub(r'\s*\(\d+\s+samples\)\s*', '', raw_text).strip()
-            
+
             # Count directories on disk
             count = 0
             sanitized_label = self._collector._sanitize_label(clean_label)
@@ -446,7 +445,7 @@ class DatasetCollectionTab(QWidget):
                 path = self._collector._base_dir / category_dir / sanitized_label / "samples"
                 if path.exists() and path.is_dir():
                     count += len([d for d in path.iterdir() if d.is_dir()])
-            
+
             item.setText(f"  {clean_label}  ({count} samples)")
             total_samples += count
 

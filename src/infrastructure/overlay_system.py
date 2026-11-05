@@ -17,8 +17,7 @@ For platforms without native support, falls back to PySide6 frameless window.
 from __future__ import annotations
 
 import logging
-import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 
@@ -159,9 +158,8 @@ class OverlayManager:
     def _init_windows_native(self) -> Optional["WindowsNativeOverlay"]:
         try:
             import ctypes
-            from ctypes import wintypes
             # Test that Windows APIs are available
-            user32 = ctypes.windll.user32
+            _ = ctypes.windll.user32
             return WindowsNativeOverlay(self._config)
         except (ImportError, AttributeError) as e:
             self._logger.warning(f"Windows native overlay unavailable: {e}")
@@ -195,15 +193,13 @@ class WindowsNativeOverlay:
     def _setup(self) -> None:
         try:
             import ctypes
-            from ctypes import wintypes
 
             self._user32 = ctypes.windll.user32
             self._gdi32 = ctypes.windll.gdi32
             self._dwmapi = ctypes.windll.dwmapi
 
-            # Register window class
-            wc = ctypes.c_wchar_p("\x00" * 256)
-            # Simplified - in production use proper WNDCLASSW registration
+            # Register window class (simplified - in production use proper WNDCLASSW registration)
+            _ = ctypes.c_wchar_p("\x00" * 256)
 
             self._logger.info("Windows native overlay configured")
         except Exception as e:
@@ -255,7 +251,6 @@ class QtOverlayWindow:
     def _setup(self) -> None:
         try:
             from PySide6.QtCore import Qt
-            from PySide6.QtGui import QFont
             from PySide6.QtWidgets import QApplication, QLabel, QWidget
 
             app = QApplication.instance()
@@ -337,7 +332,6 @@ class QtOverlayWindow:
 
 def _render_to_gdi(hwnd, text: str, config: OverlayConfig) -> None:
     """Render Arabic text using GDI with reshaping."""
-    import ctypes
     try:
         from arabic_reshaper import reshape
         from bidi.algorithm import get_display

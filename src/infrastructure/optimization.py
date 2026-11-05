@@ -18,11 +18,10 @@ Strategies:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 
-import numpy as np
 
 
 class OptimizationLevel(Enum):
@@ -186,7 +185,6 @@ class PerformanceOptimizer:
             return adjustments
 
         ratio = measured_fps / target_fps
-        min_dim = 160
         max_dim = 1280
 
         if ratio < 0.8:

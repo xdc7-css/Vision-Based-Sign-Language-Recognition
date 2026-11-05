@@ -1,5 +1,4 @@
 from __future__ import annotations
-import os
 import sys
 import urllib.request
 
@@ -44,7 +43,6 @@ class HandsCompatibilityWrapper:
     ) -> None:
         self.model_path = self._resolve_model_path()
 
-        import mediapipe as mp
         from mediapipe.tasks import python
         from mediapipe.tasks.python import vision
 
@@ -104,15 +102,15 @@ class HandsCompatibilityWrapper:
         except Exception as e:
             logger.error("MediaPipe HandLandmarker inference error: %s", e)
             return MockResults([], [])
-        
+
         multi_hand_landmarks = []
         multi_handedness = []
-        
+
         if result.hand_landmarks:
             for landmarks in result.hand_landmarks:
                 landmark_list = [MockLandmark(lm.x, lm.y, lm.z) for lm in landmarks]
                 multi_hand_landmarks.append(MockLandmarkList(landmark_list))
-                
+
             if result.handedness:
                 for handedness in result.handedness:
                     class_list = [
@@ -123,7 +121,7 @@ class HandsCompatibilityWrapper:
                         for c in handedness
                     ]
                     multi_handedness.append(MockHandedness(class_list))
-                
+
         return MockResults(multi_hand_landmarks, multi_handedness)
 
 
@@ -139,7 +137,7 @@ def patch_mediapipe() -> None:
             class MockHands:
                 Hands = HandsCompatibilityWrapper
             hands = MockHands()
-            
+
         mp.solutions = MockSolutions()
         sys.modules['mediapipe.solutions'] = MockSolutions()
         sys.modules['mediapipe.solutions.hands'] = MockSolutions.MockHands()

@@ -15,14 +15,14 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis, QCategoryAxis, QBarSeries, QBarSet, QBarCategoryAxis, QPieSeries
+from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
 from PySide6.QtCore import QPointF, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
 )
 
-from src.infrastructure.analytics import AnalyticsEngine, AnalyticsSnapshot
+from src.infrastructure.analytics import AnalyticsEngine
 
 
 # ── Chart Styles ────────────────────────────────────────────────────
@@ -75,13 +75,13 @@ class MetricCard(QFrame):
         self._value_label = QLabel("0.0")
         self._title_label = QLabel(title)
 
-        self.setStyleSheet(f"""
-            MetricCard {{
+        self.setStyleSheet("""
+            MetricCard {
                 background: #2a2a2a;
                 border: 1px solid #3a3a3a;
                 border-radius: 8px;
                 padding: 12px;
-            }}
+            }
         """)
         self.setMinimumHeight(100)
 

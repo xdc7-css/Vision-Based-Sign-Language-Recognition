@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from src.domain.entities import CameraInfo, DialectInfo, ModelInfo, VideoSourceType
-from src.domain.interfaces import CameraService, ConfigRepository, DialectRepository
+from src.domain.interfaces import CameraService, DialectRepository, VideoSource
 from src.application.state import AppState
 
 

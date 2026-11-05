@@ -91,7 +91,7 @@ def evaluate_model(
 
     # Generate evaluation report
     evaluator = ModelEvaluator()
-    report = evaluator.generate_classification_report(y_test, y_pred, names, output_dir, model_name)
+    evaluator.generate_classification_report(y_test, y_pred, names, output_dir, model_name)
     cm = evaluator.confusion_matrix(y_test, y_pred, names)
 
     # Build evaluation result
@@ -115,7 +115,7 @@ def evaluate_model(
     with open(result_path, "w") as f:
         json.dump(result, f, indent=2)
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Accuracy:  {result['accuracy']:.4f}")
     print(f"  Precision: {result['precision']:.4f}")
     print(f"  Recall:    {result['recall']:.4f}")

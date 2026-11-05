@@ -6,7 +6,7 @@ import json
 import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import numpy as np
 
@@ -320,7 +320,7 @@ class DatasetValidator:
         for cs in report.class_statistics:
             print(f"  {cs.class_name:<20} {cs.sample_count:>8} {cs.valid_count:>6} "
                   f"{cs.invalid_count:>8} {cs.avg_frames:>8.1f}")
-        print(f"\n  Recommendations:")
+        print("\n  Recommendations:")
         for rec in report.recommendations:
             print(f"    • {rec}")
         print(f"{'='*60}\n")

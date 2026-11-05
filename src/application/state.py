@@ -9,7 +9,6 @@ from src.domain.entities import (
     DialectInfo,
     ModelInfo,
     SourceProperties,
-    VideoSourceType,
 )
 
 

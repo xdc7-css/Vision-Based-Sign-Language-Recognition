@@ -10,7 +10,6 @@ Supports:
 from __future__ import annotations
 
 import json
-import sys
 from collections import Counter
 from pathlib import Path
 from typing import Callable, Optional
@@ -240,7 +239,7 @@ def train_static_model(
 
     counts = Counter(y)
     n_classes = len(counts)
-    print(f"\n--- Dataset Class Distribution ---")
+    print("\n--- Dataset Class Distribution ---")
     for cls_name, count in sorted(counts.items()):
         print(f"  - Class '{cls_name}': {count} samples")
     print(f"Total: {len(X)} samples across {n_classes} qualifying classes (augment={augment}, multiplier={augment_multiplier})\n")
@@ -259,7 +258,7 @@ def train_static_model(
 
     # Print results
     print(f"\n{'='*55}")
-    print(f"  Model Comparison — Static Gesture Recognition")
+    print("  Model Comparison — Static Gesture Recognition")
     print(f"{'='*55}")
     print(f"  {'Model':<8} {'Accuracy':>10} {'F1':>10} {'Infer(ms)':>10} {'Size(KB)':>10}")
     print(f"  {'-'*48}")
@@ -303,7 +302,6 @@ def train_static_model(
 
     # Evaluate and export using ModelEvaluator
     try:
-        from sklearn.metrics import accuracy_score
         evaluator = ModelEvaluator()
         from sklearn.model_selection import train_test_split
         from sklearn.preprocessing import LabelEncoder, StandardScaler
@@ -336,7 +334,7 @@ def train_static_model(
             "precision": best.precision if best else 0.0,
             "recall": best.recall if best else 0.0,
         })
-        print(f"  Registered in model registry")
+        print("  Registered in model registry")
     except Exception as e:
         print(f"  Warning: Model registration failed: {e}")
 
