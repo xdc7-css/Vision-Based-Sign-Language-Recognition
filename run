@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Companion launcher enabling 'python run' directly."""
+import sys
+import run
+
+if __name__ == "__main__":
+    sys.exit(run.main())
+

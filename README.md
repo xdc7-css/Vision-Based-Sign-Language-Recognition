@@ -161,7 +161,7 @@ This section provides complete, step-by-step instructions designed so that **any
 |                                                                                   |
 |  [Step 1: Install Python 3.12] ──> [Step 2: Get Code] ──> [Step 3: Open Terminal]  |
 |                                                                      │            |
-|  [Step 6: Launch App] <── [Step 5: Install Packages] <── [Step 4: Create .venv]   |
+|  [Step 8: Launch App] <── [Step 6: Install Packages] <── [Step 4-5: .venv Setup]  |
 +-----------------------------------------------------------------------------------+
 ```
 
@@ -266,15 +266,24 @@ You should see the following files listed:
 ---
 
 ### Step 8: Launch the Application!
-Launch the desktop application using either command:
+Launch the complete desktop application with a single, simple command from the project root directory:
 
 ```powershell
-# Recommended module execution:
-python -m src.main
+# Primary one-command launcher (Recommended):
+python run.py
 
-# Or direct script execution:
-python src\main.py
+# Or simply:
+python run
+
+# Direct executable path (without activating .venv):
+.\.venv\Scripts\python.exe run.py
+
+# Alternative direct module execution:
+python -m src.main
 ```
+
+> [!TIP]
+> **One-Command Startup:** `run.py` automatically performs pre-flight checks to ensure all required dependencies (`PySide6`, `mediapipe`, `onnxruntime`, `opencv-python`) and AI model assets are present before launching the graphical interface.
 
 The dark-themed application window will open, presenting the **System Dashboard**.
 
@@ -488,7 +497,7 @@ flowchart TD
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Launch the Application:** Run `python -m src.main` from your activated virtual environment.
+1. **Launch the Application:** Run `python run.py` (or `python run`) from your project root with your virtual environment active. (Alternative: `python -m src.main`).
 2. **Switch to the Recognition Tab:** Click on the **«🎯 Recognition»** tab.
 3. **Select Your Video Source:** Choose your connected camera (default: `Webcam (0)`), a pre-recorded video file, a screen region, or an application window.
 4. **Choose Recognition Engine:**
@@ -623,6 +632,8 @@ arabic sign language/
 ├── ARCHITECTURE.md                       # Comprehensive architecture manual
 ├── README.md                             # Main landing documentation
 ├── requirements.txt                      # PIP dependency specifications
+├── run                                   # Companion root-level launch script
+├── run.py                                # Root-level application launcher & pre-flight checker
 └── setup.py                              # Package installation configuration
 ```
 
