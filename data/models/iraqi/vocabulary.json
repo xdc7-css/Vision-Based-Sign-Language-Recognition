@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "dialect": "iraqi",
+    "model_type": "mlp",
+    "accuracy": 1.0,
+    "classes": [
+      "السلام_عليكم",
+      "لا",
+      "نعم"
+    ]
+  },
+  "gestures": {
+    "السلام_عليكم": {
+      "arabic": "السلام عليكم",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_السلام_عليكم": {
+      "arabic": "السلام عليكم",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "لا": {
+      "arabic": "لا",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_لا": {
+      "arabic": "لا",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "نعم": {
+      "arabic": "نعم",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_نعم": {
+      "arabic": "نعم",
+      "type": "static",
+      "threshold": 0.65
+    }
+  }
+}

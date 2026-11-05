@@ -1,0 +1,339 @@
+---
+title: main.py
+date: 2026-01-28
+lastmod: 2026-02-05
+src_hash: 669dd05d7f7719c47dcfcabc864db6d481aeca0adc84541331bed53f59cfa8c4
+aliases: ["Application Entry Point", "Lifespan Manager"]
+---
+
+# source/api/main.py
+
+#source-code #api #fastapi #application
+
+**File Path**: `src/api/main.py`
+
+**Purpose**: FastAPI application setup, lifespan management, routing, and middleware configuration.
+
+## Overview
+
+This module is the entry point for the FastAPI application. Content includes:
+- Lifespan management for model loading and resource cleanup.
+- CORS middleware configuration for origin control.
+- Static asset serving.
+- Route definitions for the web interface.
+
+## Call Graph
+
+```mermaid
+graph TD
+    A[FastAPI Framework] --> B[lifespan]
+    B --> C[load_onnx_model]
+    
+    D[Browser GET /] --> E[live_signs_ui]
+    E --> F[FileResponse]
+    
+    G[Browser GET /favicon.ico] --> H[favicon]
+    H --> F
+    
+    I[Chrome DevTools] --> J[chrome_devtools]
+    J --> K[JSONResponse]
+    
+    style B fill:#e1f5ff
+    style E fill:#e1f5ff
+    style H fill:#e1f5ff
+    style J fill:#e1f5ff
+```
+
+## Dependencies
+
+```python
+import os
+from contextlib import asynccontextmanager
+import fastapi
+import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+```
+
+**Internal Imports**:
+- [[websocket_py#websocket_router|websocket_router]] from `api.websocket`
+- [[../core/constants_py#MODELS_DIR|MODELS_DIR]] from `core.constants`
+- [[../modelling/model_py#load_onnx_model|load_onnx_model]] from `modelling.model`
+
+## Functions
+
+### `lifespan(app: fastapi.FastAPI)`
+
+#async #context-manager
+
+**Type**: Async context manager
+
+**Purpose**: Manages application lifespan - loads ONNX model on startup and cleans up on shutdown.
+
+**Parameters**:
+- `app` (fastapi.FastAPI): The FastAPI application instance
+
+**Yields**: None (context manager)
+
+**Implementation**:
+```python
+@asynccontextmanager
+async def lifespan(app: fastapi.FastAPI):
+    logger = get_default_logger()
+    logger.info("Loading Onnx model...")
+    ONNX_CHECKPOINT_FILENAME = (
+        os.environ.get("ONNX_CHECKPOINT_FILENAME") or "ONNX_CHECKPOINT_FILENAME"
+    )
+    onnx_checkpoint_path = os.path.join(MODELS_DIR, ONNX_CHECKPOINT_FILENAME)
+    app.state.onnx_model = load_onnx_model(onnx_checkpoint_path)
+
+    logger.info("Onnx model loaded successfully")
+
+    yield
+
+    logger.info("Shutting down...")
+    del app.state.onnx_model
+```
+
+**Called By**:
+- FastAPI framework (automatic on startup/shutdown)
+
+**Calls**:
+- [[../modelling/model_py#load_onnx_model|load_onnx_model()]] - Loads ONNX model from file
+
+**Side Effects**:
+- Sets `app.state.onnx_model` with loaded ONNX inference session
+- Reads `ONNX_CHECKPOINT_FILENAME` from environment variables
+- Prints startup/shutdown messages to console
+
+**Related**:
+- [[../../deployment/environment_configuration#ONNX_CHECKPOINT_FILENAME|ONNX_CHECKPOINT_FILENAME]] environment variable
+- [[../core/constants_py#MODELS_DIR|MODELS_DIR]] constant
+
+---
+
+### `live_signs_ui()`
+
+#route #get
+
+**Type**: FastAPI route handler
+
+**Route**: `GET /` and `GET /live-signs`
+
+**Purpose**: Serves the main HTML interface for live sign language recognition.
+
+**Parameters**: None
+
+**Returns**: `FileResponse` - HTML file response
+
+**Implementation**:
+```python
+@app.get("/")
+@app.get("/live-signs")
+async def live_signs_ui():
+    return FileResponse(os.path.join(STATIC_ASSETS_DIR, "index.html"))
+```
+
+**Called By**:
+- Browser requests to `/` or `/live-signs`
+
+**Calls**:
+- `FileResponse()` - FastAPI response class
+
+**Returns**:
+- [[../frontend/index_html|index.html]] file from static directory
+
+**Related**:
+- [[../frontend/index_html|index.html]] - The served HTML file
+- [[../../frontend/web_interface_design|Web Interface Design]]
+
+---
+
+### `favicon()`
+
+#route #get
+
+**Type**: FastAPI route handler
+
+**Route**: `GET /favicon.ico`
+
+**Purpose**: Serves the favicon for the web interface.
+
+**Parameters**: None
+
+**Returns**: `FileResponse` - Favicon file response
+
+**Implementation**:
+```python
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(
+        path=os.path.join(STATIC_ASSETS_DIR, "mediapipe-logo.ico"),
+        headers={"Content-Disposition": "attachment; filename=favicon.ico"},
+    )
+```
+
+**Called By**:
+- Browser automatic favicon requests
+
+**Calls**:
+- `FileResponse()` - FastAPI response class
+
+**Notes**:
+- Excluded from API schema (`include_in_schema=False`)
+- Uses MediaPipe logo as favicon
+
+---
+
+### `chrome_devtools()`
+
+#route #get
+
+**Type**: FastAPI route handler
+
+**Route**: `GET /.well-known/appspecific/com.chrome.devtools.json`
+
+**Purpose**: Provides Chrome DevTools configuration endpoint.
+
+**Parameters**: None
+
+**Returns**: `JSONResponse` - Empty JSON object
+
+**Implementation**:
+```python
+@app.get("/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)
+async def chrome_devtools():
+    return JSONResponse({})
+```
+
+**Called By**:
+- Chrome DevTools (automatic)
+
+**Calls**:
+- `JSONResponse()` - FastAPI response class
+
+**Notes**:
+- Excluded from API schema
+- Returns empty configuration
+
+---
+
+## Application Configuration
+
+### FastAPI App Instance
+
+```python
+app = fastapi.FastAPI(lifespan=lifespan)
+```
+
+**Configuration**:
+- Uses [[#lifespan|lifespan()]] context manager for startup/shutdown
+
+### CORS Middleware
+
+```python
+origins = [os.environ.get("DOMAIN_NAME") or "DOMAIN_NAME"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+**Configuration**:
+- Allowed origins from [[deployment/environment_configuration#DOMAIN_NAME|DOMAIN_NAME]] environment variable
+- Allows credentials
+- Allows all HTTP methods and headers
+
+**Related**:
+- [[../../api/fastapi_application#CORS Configuration|CORS Configuration]]
+
+### Static Files
+
+```python
+static_assets_dir = "./static"
+app.mount("/static", StaticFiles(directory=static_assets_dir, html=True), name="static")
+```
+
+**Configuration**:
+- Serves files from `./static` directory
+- Accessible at `/static/*` URLs
+- HTML file serving enabled
+
+**Served Files**:
+- [[../frontend/index_html|index.html]]
+- [[../frontend/live_signs_js|live-signs.js]]
+- [[../frontend/styles_css|styles.css]]
+- `mediapipe-logo.ico`
+
+### Router Inclusion
+
+```python
+app.include_router(websocket_router)
+```
+
+**Includes**:
+- [[websocket_py#websocket_router|websocket_router]] - WebSocket routes for live sign detection
+
+## Usage
+
+This module is not run directly. Instead, it's imported by [[run_py|run.py]]:
+
+```python
+# In run.py
+uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
+```
+
+## Environment Variables Used
+
+| Variable                   | Usage               | Default                      |
+| :------------------------- | :------------------ | :--------------------------- |
+| `ONNX_CHECKPOINT_FILENAME` | ONNX model filename | `"ONNX_CHECKPOINT_FILENAME"` |
+| `DOMAIN_NAME`              | CORS allowed origin | `"DOMAIN_NAME"`              |
+
+## State Management
+
+### Application State
+
+The application stores the ONNX model in `app.state`:
+
+```python
+app.state.onnx_model: InferenceSession
+```
+
+**Set By**: [[#lifespan|lifespan()]]
+**Used By**: [[websocket_py#ws_live_signs|ws_live_signs()]]
+
+## Error Handling
+
+- No explicit error handling in routes
+- FastAPI handles exceptions automatically
+- Model loading errors will prevent application startup
+
+## Related Documentation
+
+**Conceptual**:
+- [[../../api/fastapi_application|FastAPI Application]]
+- [[../../api/websocket_communication|WebSocket Communication]]
+- [[../../deployment/environment_configuration|Environment Configuration]]
+
+**Source Code**:
+- [[websocket_py|websocket.py]] - WebSocket handler
+- [[run_py|run.py]] - Application entry point
+- [[../modelling/model_py|model.py]] - Model loading functions
+- [[../core/constants_py|constants.py]] - Configuration constants
+
+**Frontend**:
+- [[../frontend/index_html|index.html]] - Main HTML interface
+- [[../frontend/live_signs_js|live-signs.js]] - Client-side logic
+
+---
+
+**File Location**: `src/api/main.py`
+
+**Lines of Code**: 61
+
+**Last Updated**: 2026-01-27

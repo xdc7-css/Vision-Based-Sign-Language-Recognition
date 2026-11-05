@@ -1,0 +1,39 @@
+# ── Core ─────────────────────────────────────────────────────────
+PySide6>=6.5.0
+# QtCharts is bundled in PySide6_Addons (auto-installed with PySide6)
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# ── Video Sources ───────────────────────────────────────────────
+mss>=9.0.0                          # Screen capture (optional)
+pywin32>=306                        # Window capture Windows-only (optional)
+Pillow>=10.0.0                      # Fallback screen capture
+
+# ── Hand Detection ──────────────────────────────────────────────
+mediapipe>=0.10.0                   # Hand landmark detection
+
+# ── ML Inference ────────────────────────────────────────────────
+scikit-learn>=1.3.0                 # RF, SVM, MLP classifiers
+joblib>=1.3.0                       # Model serialization
+
+# ── Deep Learning ───────────────────────────────────────────────
+torch>=2.0.0                        # LSTM, GRU, Transformer (optional — training only)
+onnxruntime>=1.15.0                 # ONNX inference (optional)
+
+# ── Arabic Text ─────────────────────────────────────────────────
+arabic-reshaper>=2.1.0              # Arabic letter reshaping
+python-bidi>=0.4.0                  # Bidirectional text layout
+
+# ── Monitoring ──────────────────────────────────────────────────
+psutil>=5.9.0                       # CPU/memory metrics
+
+# ── Config ──────────────────────────────────────────────────────
+PyYAML>=6.0                         # YAML config files
+
+# ── Model Export ────────────────────────────────────────────────
+skl2onnx>=1.15.0                    # sklearn → ONNX export (optional)
+
+# ── Development ─────────────────────────────────────────────────
+pytest>=7.4.0
+pytest-cov>=4.1.0
+ruff>=0.1.0

@@ -1,0 +1,15 @@
+{
+  "sample_id": "d255f59d",
+  "gesture_type": "static_word",
+  "gesture_label": "السلام عليكم",
+  "dialect": "iraqi",
+  "timestamp": 1793383891.0167031,
+  "num_frames": 1,
+  "num_hands": 1,
+  "handedness": "Left",
+  "duration_seconds": 0.0,
+  "fps": 1000.0,
+  "has_motion": false,
+  "total_distance": 0.0,
+  "motion_energy": 0.0
+}

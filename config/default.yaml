@@ -1,0 +1,111 @@
+# ArSL Translation Overlay — Default Configuration
+# Application reads config/default.yaml then config/user.yaml for overrides
+
+app:
+  name: ArSL Translation Overlay
+  version: 1.0.0
+  log_level: INFO
+
+logging:
+  level: INFO
+  file: data/logs/arsl.log
+  max_size_mb: 10
+  backup_count: 3
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+dialect:
+  active: iraqi
+  paths:
+    iraqi:
+      dataset: data/datasets/iraqi
+      models: data/models/iraqi
+      vocabulary: data/models/iraqi/vocabulary.json
+    saudi:
+      dataset: data/datasets/saudi
+      models: data/models/saudi
+      vocabulary: data/models/saudi/vocabulary.json
+    egyptian:
+      dataset: data/datasets/egyptian
+      models: data/models/egyptian
+      vocabulary: data/models/egyptian/vocabulary.json
+
+recognition:
+  hybrid:
+    word_threshold: 0.85
+    dynamic_threshold: 0.75
+    alphabet_threshold: 0.90
+    cooldown_frames: 20
+    temporal_smoothing: 3
+    enable_word: true
+    enable_dynamic: true
+    enable_alphabet: true
+
+  word:
+    min_confidence_static: 0.85
+    min_confidence_dynamic: 0.75
+    min_confidence_alphabet: 0.90
+    rejection_threshold: 0.5
+    temporal_smoothing_window: 5
+    cooldown_frames: 30
+
+  static:
+    model_type: auto
+    feature_scaling: standard
+    cross_validation_folds: 5
+
+  dynamic:
+    architectures: [lstm, gru, transformer]
+    sequence_length: 30
+    hidden_size: 128
+    num_layers: 2
+    epochs: 50
+    batch_size: 32
+
+performance:
+  profile: balanced
+  frame_skip: 0
+  input_width: 640
+  input_height: 480
+  hand_model_complexity: 0
+  min_detection_confidence: 0.7
+  min_tracking_confidence: 0.6
+  max_hands: 1
+  parallel_capture: true
+  render_overlay: true
+  enable_motion_tracking: true
+  enable_temporal_smoothing: true
+
+overlay:
+  enabled: true
+  x: 100
+  y: 100
+  width: 600
+  height: 120
+  font_size: 36
+  font_name: Arial
+  rtl_enabled: true
+  background_opacity: 0
+  always_on_top: true
+  click_through: true
+  max_lines: 3
+  line_spacing: 10
+  border_width: 0
+
+video:
+  default_source: webcam
+  default_camera_index: 0
+  webcam_buffer_size: 2
+  file_loop: false
+
+analytics:
+  window_size: 60
+  update_interval_ms: 200
+  chart_max_points: 60
+
+dataset:
+  base_path: data/datasets
+  frames_per_sample: 30
+  include_color: true
+  include_depth: false
+  include_motion: true
+  auto_validate: true

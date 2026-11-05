@@ -1,0 +1,43 @@
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs & Runtime Artifacts
+*.log
+logs/
+data/logs/
+data/cache/
+
+# Local Test Outputs
+test_camera_frame.jpg
+full_test_run.txt
+test_output.txt
+test_output_verbose.txt
+test_overlay_output.txt

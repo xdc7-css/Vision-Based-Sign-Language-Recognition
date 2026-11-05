@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build installer with NSIS
+        run: |
+          pyinstaller --name "ArSL-Overlay" --onefile --windowed --add-data "config;config" --hidden-import PySide6.QtCharts --hidden-import mediapipe --icon resources/icon.ico src/main.py
+          # NSIS packaging would go here
+          echo "Build complete"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ArSL-Overlay.exe
+          generate_release_notes: true

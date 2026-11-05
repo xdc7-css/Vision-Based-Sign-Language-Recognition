@@ -1,0 +1,24 @@
+{
+  "iraqi": {
+    "static_svm": {
+      "path": "data\\models\\iraqi\\static_svm.pkl",
+      "metrics": {
+        "accuracy": 1.0,
+        "f1_score": 1.0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "version": "1.0.0"
+    },
+    "static_mlp": {
+      "path": "data\\models\\iraqi\\static_model.pkl",
+      "metrics": {
+        "accuracy": 1.0,
+        "f1_score": 1.0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "version": "1.0.0"
+    }
+  }
+}

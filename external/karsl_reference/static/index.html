@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Language Recognition</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <main class="app-container">
+        <header class="top-bar">
+            <div class="header-left">
+                <!-- v1 ISLR: Isolated Sign Language Recognition -->
+                <!-- v2 CSLR: Continuous SLR -->
+                <!-- v3 SLT: Sign Language Translation -->
+                <h1>ISLR <span class="badge">Live</span></h1>
+                <div id="connection-status" class="status-pill disconnected">
+                    <span class="dot"></span>
+                    <span id="status-text">Connecting...</span>
+                </div>
+            </div>
+
+            <div style="display: flex; gap:.5em;">
+                <button id="btn-archive" class="icon-btn" aria-label="View Past Sessions">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path
+                            d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+                    </svg>
+                </button>
+
+                <button id="btn-settings" class="icon-btn" aria-label="Open Settings">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"
+                        viewBox="2 2 20 20" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                        <path
+                            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0 -2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0 -1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <circle cx="12" cy="12" r="3" />
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <div id="archive-modal" class="modal-overlay hidden">
+            <div class="modal-card wide-modal">
+                <div class="modal-header">
+                    <h2>Past Sessions</h2>
+                    <button id="btn-close-archive" class="icon-btn-sm" aria-label="Close">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="modal-body">
+                    <ul id="session-list" class="session-list">
+                    </ul>
+                    <div id="session-detail" class="session-detail hidden">
+                        <button id="btn-back-list" class="text-btn">← Back to List</button>
+
+                        <div class="detail-group">
+                            <label>Timestamp</label>
+                            <div id="detail-date" class="detail-value">---</div>
+                        </div>
+
+                        <div class="detail-group">
+                            <label>Final Sentence</label>
+                            <div id="detail-sentence" class="sentence-snapshot">---</div>
+                        </div>
+
+                        <div class="detail-group">
+                            <label>Word Log</label>
+                            <ul id="detail-log" class="history-list snapshot-list">
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <aside id="history-sidebar" class="history-sidebar">
+            <div class="history-header">
+                <h3>Session Log</h3>
+                <button id="close-history" class="icon-btn-sm" aria-label="Close History">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <ul id="history-list" class="history-list">
+                <li class="history-empty">No signs detected yet.</li>
+            </ul>
+
+            <div class="history-footer">
+                <button id="clear-history" class="icon-btn warning" aria-label="Clear All">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path
+                            d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                        </path>
+                        <line x1="10" y1="11" x2="10" y2="17"></line>
+                        <line x1="14" y1="11" x2="14" y2="17"></line>
+                    </svg>
+                </button>
+            </div>
+        </aside>
+
+
+        <div class="viewport">
+            <video id="webcam" autoplay playsinline muted></video>
+            <canvas id="overlay-canvas"></canvas>
+            <canvas id="process-canvas" hidden></canvas>
+
+            <div class="hud-layer">
+                <div class="prediction-card">
+                    <div class="pred-label">Detected Sign</div>
+
+                    <button id="history-toggle" class="icon-btn" aria-label="Toggle History"
+                        style="position: absolute; right: 1rem; top: 1rem; z-index: 30;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                    </button>
+
+                    <div class="pred-main">
+                        <span id="prediction-text-ar">...</span>
+                        <span id="prediction-text-en" class="sub-text">...</span>
+                    </div>
+                    <div class="confidence-wrapper">
+                        <div class="confidence-label">
+                            <span>Confidence</span>
+                            <span id="confidence-val">0%</span>
+                        </div>
+                        <div class="progress-track">
+                            <div id="confidence-bar" class="progress-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <div class="sentence-bar-wrapper">
+                <div id="sentence-output" class="sentence-output"
+                    placeholder="Signs will appear here..."></div>
+
+                <div class="sentence-controls">
+                    <button id="btn-speak" class="control-btn" aria-label="Speak Sentence">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07">
+                            </path>
+                        </svg>
+                    </button>
+                    <button id="btn-clear" class="control-btn warning" aria-label="Clear Sentence">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path
+                                d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <div id="settings-overlay" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="btn-close-settings" class="icon-btn-sm" aria-label="Close">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label>Appearance</label>
+                    <div class="theme-switcher">
+                        <button id="theme-btn-light" class="theme-option"
+                            onclick="setTheme('light')">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="5"></circle>
+                                <line x1="12" y1="1" x2="12" y2="3"></line>
+                                <line x1="12" y1="21" x2="12" y2="23"></line>
+                                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                                <line x1="1" y1="12" x2="3" y2="12"></line>
+                                <line x1="21" y1="12" x2="23" y2="12"></line>
+                                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                            </svg>
+                            Light
+                        </button>
+                        <button id="theme-btn-dark" class="theme-option" onclick="setTheme('dark')">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                            </svg>
+                            Dark
+                        </button>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <label>Active Regions</label>
+                    <div class="chip-container">
+                        <button id="btn-viz-face" class="filter-chip active"
+                            onclick="toggleViz('face')">Face</button>
+                        <button id="btn-viz-pose" class="filter-chip active"
+                            onclick="toggleViz('pose')">Pose</button>
+                        <button id="btn-viz-hands" class="filter-chip active"
+                            onclick="toggleViz('hands')">Hands</button>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <label>Draw Style</label>
+                    <div class="toggle-wrapper">
+                        <label class="switch">
+                            <input type="checkbox" id="chk-draw-lines">
+                            <span class="slider round"></span>
+                        </label>
+                        <span>Skeleton (Lines)</span>
+                    </div>
+                    <div class="toggle-wrapper" style="margin-top: 10px;">
+                        <label class="switch">
+                            <input type="checkbox" id="chk-draw-points">
+                            <span class="slider round"></span>
+                        </label>
+                        <span>Keypoints (Dots)</span>
+                    </div>
+                </div>
+
+
+                <div class="setting-group">
+                    <label for="lang-select">Voice Language</label>
+                    <select id="lang-select" class="custom-select">
+                        <option value="ar-EG">Arabic (Egypt)</option>
+                        <option value="ar-SA">Arabic (Saudi Arabia)</option>
+                        <option value="en-US">English (US)</option>
+                        <option value="en-GB">English (UK)</option>
+                    </select>
+                    <p class="setting-hint">Used for Text-to-Speech</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/static/live-signs.js"></script>
+</body>
+
+</html>

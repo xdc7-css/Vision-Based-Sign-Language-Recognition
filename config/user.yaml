@@ -1,0 +1,11 @@
+# User overrides — values here override default.yaml at runtime
+# Leave empty to use defaults
+
+dialect:
+  active: iraqi
+
+performance:
+  profile: balanced
+
+overlay:
+  enabled: true

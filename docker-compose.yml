@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  arsl-overlay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: arsl-overlay
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_QPA_PLATFORM=xcb
+      - LOG_LEVEL=INFO
+      - PERFORMANCE_PROFILE=balanced
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    devices:
+      - /dev/video0:/dev/video0
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  arsl-training:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: arsl-training
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./src:/app/src
+    entrypoint: ["python", "-m", "src.models.train_static"]
+    profiles:
+      - training
