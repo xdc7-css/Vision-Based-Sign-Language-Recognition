@@ -668,8 +668,10 @@ arabic sign language/
 │           ├── analytics.py              # Latency & historical metrics
 │           ├── settings.py               # Hardware & resolution settings
 │           └── logs.py                   # Real-time log viewer
-├── tests/                                # Automated test suite (208 tests)
+├── tests/                                # Automated test suite (238 tests)
 │   ├── test_karsl.py                     # KArSL-502 engine & TSNSampler tests
+│   ├── test_camera_dropdown_and_switching.py # DirectShow unified camera & switching tests
+│   ├── test_camera_stream_and_yolo.py    # Camera streaming & YOLOv8 detector tests
 │   ├── test_recognition.py              # Recognition pipeline unit tests
 │   ├── test_hand_detection.py            # Hand tracking & normalization tests
 │   ├── test_text_builder.py              # Arabic BiDi & stabilization tests
@@ -678,6 +680,7 @@ arabic sign language/
 │       ├── test_pipeline_integration.py  # Full frame-to-prediction tests
 │       └── test_performance_benchmarks.py# Latency benchmark tests
 ├── ARCHITECTURE.md                       # Comprehensive architecture manual
+├── PROJECT_FILE_GUIDE.md                 # Exhaustive academic file guide for university presentation
 ├── README.md                             # Main landing documentation
 ├── requirements.txt                      # PIP dependency specifications
 ├── run                                   # Companion root-level launch script
