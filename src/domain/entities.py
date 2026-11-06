@@ -48,6 +48,34 @@ class CameraInfo:
     is_available: bool = True
     device_type: str = "webcam"  # "laptop", "usb", "virtual", "ip_camera"
     description: str = ""
+    device_path: str = ""
+
+    @property
+    def display_label(self) -> str:
+        name_lower = self.name.lower()
+        if "ivcam" in name_lower:
+            suffix = "iPhone Camera"
+        elif "droidcam" in name_lower or "iriun" in name_lower or "epoccam" in name_lower:
+            suffix = "Phone Camera"
+        elif "obs" in name_lower or "virtual" in name_lower:
+            suffix = "Virtual Camera"
+        elif any(k in name_lower for k in ("hd webcam", "integrated", "built-in", "front", "facetime", "internal", "laptop")):
+            suffix = "Built-in Laptop Camera"
+        elif "usb" in name_lower or "external" in name_lower:
+            suffix = "USB Camera"
+        elif self.index == 0:
+            suffix = "Built-in Laptop Camera"
+        else:
+            suffix = "External Camera"
+
+        if suffix.lower() in name_lower:
+            label = self.name
+        else:
+            label = f"{self.name} ({suffix})"
+
+        if not self.is_available:
+            label += " [Offline]"
+        return label
 
 
 @dataclass(frozen=True)

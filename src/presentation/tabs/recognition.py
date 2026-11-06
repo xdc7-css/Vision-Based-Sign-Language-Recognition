@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import queue
 import threading
 import time
@@ -10,16 +9,14 @@ from typing import Optional
 
 import cv2
 import numpy as np
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QFileDialog,
     QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -33,7 +30,7 @@ from PySide6.QtWidgets import (
 from src.application.state import AppState
 from src.application.use_cases import VideoSourceUseCases
 from src.domain.dialect import DialectId
-from src.domain.entities import CameraInfo, VideoSourceType
+from src.domain.entities import VideoSourceType
 from src.infrastructure.analytics import AnalyticsEngine
 from src.infrastructure.camera_service import OpenCVCameraService
 from src.infrastructure.dialect_manager import DialectManager
@@ -50,7 +47,6 @@ from src.infrastructure.recognition.karsl_recognizer import (
 )
 from src.infrastructure.text_builder import ArabicTextBuilder
 from src.presentation.dialogs.karsl_vocab_dialog import KArSLVocabularyDialog
-from src.presentation.dialogs.phone_camera_dialog import PhoneCameraGuideDialog
 from src.presentation.widgets import (
     CameraPreview,
     DialectSelector,
@@ -284,7 +280,7 @@ class RecognitionTab(QWidget):
 
         header = SectionHeader(
             "Live Camera & Vision Recognition",
-            "Multi-source camera input (Laptop, USB, Smartphone Wi-Fi/USB) with Sign Language & YOLO Detection",
+            "Unified real-time camera recognition (HD Webcam & e2eSoft iVCam) with Sign Language & YOLO Detection",
         )
         main_layout.addWidget(header)
 
@@ -302,67 +298,33 @@ class RecognitionTab(QWidget):
         cam_vlayout = QVBoxLayout(camera_panel)
         cam_vlayout.setSpacing(8)
 
-        # Row 1: Source Category + Device Selector + Refresh + Connect / Disconnect + Status
+        # Row 1: Unified Camera Dropdown + Refresh Button + Connect / Disconnect + Status Badge
         r1_layout = QHBoxLayout()
         r1_layout.setSpacing(10)
 
-        r1_layout.addWidget(QLabel("<b>Camera Source:</b>"))
-        self._source_cat_combo = QComboBox()
-        self._source_cat_combo.addItem("💻  Laptop Webcam", "laptop")
-        self._source_cat_combo.addItem("🔌  USB Webcam", "usb")
-        self._source_cat_combo.addItem("📱  Phone Camera (Wi-Fi / IP)", "phone_wifi")
-        self._source_cat_combo.addItem("📲  Phone Camera (USB Virtual)", "phone_usb")
-        self._source_cat_combo.addItem("📁  Video File", "file")
-        self._source_cat_combo.setMinimumWidth(210)
-        r1_layout.addWidget(self._source_cat_combo)
+        r1_layout.addWidget(QLabel("<b>Camera:</b>"))
+        self._camera_combo = QComboBox()
+        self._camera_combo.setMinimumWidth(340)
+        self._camera_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #1e1e1e;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+                padding: 5px 10px;
+                color: #ffffff;
+                font-weight: 500;
+            }
+            QComboBox:hover {
+                border-color: #007acc;
+            }
+        """)
+        r1_layout.addWidget(self._camera_combo)
 
-        # Device combo for hardware/virtual cameras
-        self._device_combo = QComboBox()
-        self._device_combo.setMinimumWidth(220)
-        r1_layout.addWidget(self._device_combo)
-
-        # IP URL container for Wi-Fi stream
-        self._ip_container = QWidget()
-        ip_layout = QHBoxLayout(self._ip_container)
-        ip_layout.setContentsMargins(0, 0, 0, 0)
-        ip_layout.setSpacing(6)
-
-        self._ip_url_edit = QLineEdit()
-        self._ip_url_edit.setPlaceholderText("http://192.168.1.X:8080/video (or RTSP)")
-        self._ip_url_edit.setText("http://192.168.1.100:8080/video")
-        self._ip_url_edit.setMinimumWidth(230)
-        ip_layout.addWidget(self._ip_url_edit)
-
-        self._ip_preset_combo = QComboBox()
-        self._ip_preset_combo.addItem("Presets...", "")
-        self._ip_preset_combo.addItem("Android IP Webcam (:8080/video)", "ipwebcam")
-        self._ip_preset_combo.addItem("DroidCam (:4747/video)", "droidcam")
-        self._ip_preset_combo.addItem("Generic MJPEG (:8080/mjpegfeed)", "mjpeg")
-        self._ip_preset_combo.addItem("RTSP Stream (:8554/live)", "rtsp")
-        ip_layout.addWidget(self._ip_preset_combo)
-
-        self._phone_guide_btn = QPushButton("ℹ Guide")
-        self._phone_guide_btn.setToolTip("Open step-by-step Smartphone Camera instructions")
-        ip_layout.addWidget(self._phone_guide_btn)
-
-        self._ip_container.setVisible(False)
-        r1_layout.addWidget(self._ip_container)
-
-        # File path selector container
-        self._file_container = QWidget()
-        file_layout = QHBoxLayout(self._file_container)
-        file_layout.setContentsMargins(0, 0, 0, 0)
-        file_layout.setSpacing(6)
-        self._file_path_edit = QLineEdit()
-        self._file_path_edit.setPlaceholderText("Select video file...")
-        file_layout.addWidget(self._file_path_edit)
-        self._file_browse_btn = QPushButton("Browse...")
-        file_layout.addWidget(self._file_browse_btn)
-        self._file_container.setVisible(False)
-        r1_layout.addWidget(self._file_container)
+        # Compatibility alias for internal references / tests
+        self._device_combo = self._camera_combo
 
         self._refresh_cam_btn = QPushButton("🔄 Refresh")
-        self._refresh_cam_btn.setToolTip("Scan system for newly connected USB or virtual webcams")
+        self._refresh_cam_btn.setToolTip("Scan system for newly connected webcams or iVCam")
         r1_layout.addWidget(self._refresh_cam_btn)
 
         r1_layout.addSpacing(8)
@@ -387,6 +349,7 @@ class RecognitionTab(QWidget):
             font-weight: 600;
         """)
         r1_layout.addWidget(self._status_badge)
+        r1_layout.addStretch()
 
         cam_vlayout.addLayout(r1_layout)
 
@@ -596,12 +559,9 @@ class RecognitionTab(QWidget):
     # ── Signal Connections ───────────────────────────────────────────────
 
     def _connect_signals(self) -> None:
-        # Camera & Source controls
-        self._source_cat_combo.currentIndexChanged.connect(self._on_category_changed)
+        # Camera controls
+        self._camera_combo.currentIndexChanged.connect(self._on_camera_selected)
         self._refresh_cam_btn.clicked.connect(self._refresh_camera_list)
-        self._ip_preset_combo.currentIndexChanged.connect(self._on_ip_preset_changed)
-        self._phone_guide_btn.clicked.connect(self._open_phone_guide)
-        self._file_browse_btn.clicked.connect(self._browse_file)
         self._connect_btn.clicked.connect(self._connect_camera)
         self._disconnect_btn.clicked.connect(self._disconnect_camera)
 
@@ -641,81 +601,112 @@ class RecognitionTab(QWidget):
     # ── Camera Enumeration & Source Management ───────────────────────────
 
     def _refresh_camera_list(self) -> None:
-        """Scan system devices and update the camera dropdown."""
+        """Scan system devices and update the unified camera dropdown with all physical and virtual cameras."""
         self._state.log("info", "Enumerating connected video devices...")
-        cameras = self._camera_service.list_cameras(force_refresh=True)
 
-        selected_cat = self._source_cat_combo.currentData()
-        self._device_combo.blockSignals(True)
-        self._device_combo.clear()
+        active_idx: Optional[int] = None
+        if self._is_connected and self._source_uri.startswith("webcam:"):
+            try:
+                active_idx = int(self._source_uri.replace("webcam:", ""))
+            except ValueError:
+                pass
 
-        filtered_cams: list[CameraInfo] = []
-        for cam in cameras:
-            if selected_cat == "laptop" and cam.device_type == "laptop":
-                filtered_cams.append(cam)
-            elif selected_cat == "usb" and cam.device_type == "usb":
-                filtered_cams.append(cam)
-            elif selected_cat == "phone_usb" and cam.device_type == "virtual":
-                filtered_cams.append(cam)
+        cameras = self._camera_service.list_cameras(force_refresh=True, active_index=active_idx)
 
-        # Fallback if no specific category matched but cameras exist
-        if not filtered_cams and selected_cat in ("laptop", "usb", "phone_usb"):
-            filtered_cams = cameras
+        prev_id = self._camera_combo.currentData()
+        self._camera_combo.blockSignals(True)
+        self._camera_combo.clear()
 
-        for cam in filtered_cams:
-            status = "✓" if cam.is_available else "✕"
-            icon = "💻" if cam.device_type == "laptop" else ("📱" if cam.device_type == "virtual" else "🔌")
-            label = f"{icon} [{cam.index}] {cam.name} ({status})"
-            self._device_combo.addItem(label, cam.id)
+        selected_index = 0
+        for i, cam in enumerate(cameras):
+            icon = "📱" if cam.device_type == "virtual" else ("💻" if cam.device_type == "laptop" else "🔌")
+            label = f"{icon}  {cam.display_label}"
+            self._camera_combo.addItem(label, cam.id)
+            if prev_id and cam.id == prev_id:
+                selected_index = i
 
-        self._device_combo.blockSignals(False)
+        if self._camera_combo.count() > 0:
+            self._camera_combo.setCurrentIndex(selected_index)
+            self._source_uri = self._camera_combo.currentData() or "webcam:0"
+
+        self._camera_combo.blockSignals(False)
         self._state.log("info", f"Discovered {len(cameras)} video device(s).")
 
-    def _on_category_changed(self, index: int) -> None:
-        cat = self._source_cat_combo.currentData()
-        is_hardware = cat in ("laptop", "usb", "phone_usb")
-        is_ip = cat == "phone_wifi"
-        is_file = cat == "file"
+    def _on_camera_selected(self, index: int) -> None:
+        """Handle camera selection change in unified dropdown."""
+        if index < 0:
+            return
+        new_cam_id = self._camera_combo.currentData()
+        if not new_cam_id:
+            return
 
-        self._device_combo.setVisible(is_hardware)
-        self._refresh_cam_btn.setVisible(is_hardware)
-        self._ip_container.setVisible(is_ip)
-        self._file_container.setVisible(is_file)
+        # If not connected yet, update target source URI
+        if not self._is_connected:
+            self._source_uri = new_cam_id
+            return
 
-        if is_hardware:
-            self._refresh_camera_list()
+        # If already streaming from this exact device, ignore
+        if new_cam_id == self._source_uri:
+            return
 
-    def _on_ip_preset_changed(self, index: int) -> None:
-        preset = self._ip_preset_combo.currentData()
-        current_text = self._ip_url_edit.text()
+        # Perform seamless live switching
+        self._switch_to_camera(new_cam_id)
 
-        # Extract current host IP or default to 192.168.1.100
-        import re
-        m = re.search(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", current_text)
-        ip = m.group(1) if m else "192.168.1.100"
+    def _switch_to_camera(self, new_cam_id: str) -> None:
+        """Switch camera safely without freezing UI, leaking handles, or crashing."""
+        was_detecting = self._is_detecting
+        cam_name = self._camera_combo.currentText().strip()
 
-        if preset == "ipwebcam":
-            self._ip_url_edit.setText(f"http://{ip}:8080/video")
-        elif preset == "droidcam":
-            self._ip_url_edit.setText(f"http://{ip}:4747/video")
-        elif preset == "mjpeg":
-            self._ip_url_edit.setText(f"http://{ip}:8080/mjpegfeed")
-        elif preset == "rtsp":
-            self._ip_url_edit.setText(f"rtsp://{ip}:8554/live")
+        self._set_status_badge("connecting", "Switching...")
+        self._caption_label.setText(f"Switching to {cam_name}...")
+        self._state.log("info", f"Switching video source from {self._source_uri} to {new_cam_id}...")
 
-    def _open_phone_guide(self) -> None:
-        dlg = PhoneCameraGuideDialog(self)
-        dlg.exec()
+        # 1. Stop UI frame polling timer
+        self._timer.stop()
 
-    def _browse_file(self) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Video File",
-            "",
-            "Video Files (*.mp4 *.avi *.mov *.mkv *.wmv);;All Files (*.*)",
-        )
-        if file_path:
-            self._file_path_edit.setText(file_path)
+        # 2. Reset worker queue to clear any pending frames
+        if self._worker:
+            self._worker.reset_buffer()
+
+        # 3. Stop and release previous video source handle
+        self._source_use_cases.stop_source()
+
+        # 4. Yield briefly for Windows driver/filter graph cleanup
+        QCoreApplication.processEvents()
+        time.sleep(0.08)
+
+        # 5. Open new camera device
+        self._source_type = VideoSourceType.WEBCAM
+        self._source_uri = new_cam_id
+
+        success = self._source_use_cases.start_source(self._source_type, self._source_uri)
+        if success:
+            self._is_connected = True
+            self._connect_btn.setEnabled(False)
+            self._disconnect_btn.setEnabled(True)
+            self._start_btn.setEnabled(not was_detecting)
+            self._stop_btn.setEnabled(was_detecting)
+            self._is_detecting = was_detecting
+            self._set_status_badge("connected", "Connected")
+            self._caption_label.setText(f"Connected to {cam_name}")
+            self._state.log("info", f"Switched to {new_cam_id} successfully.")
+
+            # Apply selected resolution
+            res_w, res_h = self._resolution_combo.currentData()
+            self._source_use_cases.set_resolution(res_w, res_h)
+
+            # Resume frame polling
+            self._timer.start(33)
+        else:
+            self._is_connected = False
+            self._is_detecting = False
+            self._connect_btn.setEnabled(True)
+            self._disconnect_btn.setEnabled(False)
+            self._start_btn.setEnabled(False)
+            self._stop_btn.setEnabled(False)
+            self._set_status_badge("error", "Switch Error")
+            self._caption_label.setText(f"Failed to open {cam_name}. Check device and click Refresh.")
+            self._state.error(f"Failed to switch to {new_cam_id}")
 
     def _set_status_badge(self, status: str, text: str) -> None:
         colors = {
@@ -738,35 +729,16 @@ class RecognitionTab(QWidget):
     # ── Camera Connection / Disconnection ────────────────────────────────
 
     def _connect_camera(self) -> None:
-        """Establish connection with the selected camera or stream."""
-        cat = self._source_cat_combo.currentData()
+        """Establish connection with the selected camera."""
+        cam_id = self._camera_combo.currentData() or "webcam:0"
+        cam_name = self._camera_combo.currentText().strip()
+
         self._set_status_badge("connecting", "Connecting...")
-        self._caption_label.setText("Connecting to camera stream...")
+        self._caption_label.setText(f"Connecting to {cam_name}...")
 
-        if cat in ("laptop", "usb", "phone_usb"):
-            self._source_type = VideoSourceType.WEBCAM
-            cam_id = self._device_combo.currentData() or "webcam:0"
-            self._source_uri = cam_id
+        self._source_type = VideoSourceType.WEBCAM
+        self._source_uri = cam_id
 
-        elif cat == "phone_wifi":
-            self._source_type = VideoSourceType.IP_CAMERA
-            raw_url = self._ip_url_edit.text().strip()
-            if not raw_url:
-                QMessageBox.warning(self, "Invalid URL", "Please enter a valid smartphone stream URL.")
-                self._set_status_badge("disconnected", "Disconnected")
-                return
-            self._source_uri = raw_url
-
-        elif cat == "file":
-            self._source_type = VideoSourceType.FILE
-            file_path = self._file_path_edit.text().strip()
-            if not file_path or not os.path.exists(file_path):
-                QMessageBox.warning(self, "Invalid File", "Please select an existing video file.")
-                self._set_status_badge("disconnected", "Disconnected")
-                return
-            self._source_uri = file_path
-
-        # Attempt opening source
         success = self._source_use_cases.start_source(self._source_type, self._source_uri)
         if success:
             self._is_connected = True
@@ -774,10 +746,10 @@ class RecognitionTab(QWidget):
             self._disconnect_btn.setEnabled(True)
             self._start_btn.setEnabled(True)
             self._set_status_badge("connected", "Connected")
-            self._caption_label.setText("Camera connected. Click 'Start Detection' to begin.")
+            self._caption_label.setText(f"Connected to {cam_name}. Click 'Start Detection' to begin.")
             self._state.log("info", f"Successfully connected to camera: {self._source_uri}")
 
-            # Apply selected resolution if webcam
+            # Apply selected resolution
             res_w, res_h = self._resolution_combo.currentData()
             self._source_use_cases.set_resolution(res_w, res_h)
 
@@ -786,7 +758,7 @@ class RecognitionTab(QWidget):
         else:
             self._is_connected = False
             self._set_status_badge("error", "Connection Error")
-            self._caption_label.setText("Failed to connect to camera. Check device or URL.")
+            self._caption_label.setText(f"Failed to connect to {cam_name}. Check device or click Refresh.")
             self._state.error(f"Failed to connect to {self._source_uri}")
 
     def _disconnect_camera(self) -> None:

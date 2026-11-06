@@ -8,7 +8,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-lightgrey.svg)]()
 [![GUI Framework](https://img.shields.io/badge/GUI-PySide6%20(Qt%206)-orange.svg)](https://wiki.qt.io/Qt_for_Python)
 [![Inference Engine](https://img.shields.io/badge/Inference-ONNX%20Runtime%20%7C%20PyTorch%20%7C%20Scikit--Learn-purple.svg)]()
-[![Tests](https://img.shields.io/badge/Tests-225%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-238%20Passed-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
@@ -514,12 +514,10 @@ flowchart TD
 
 1. **Launch the Application:** Run `python run.py` (or `python run`) from your project root with your virtual environment active. (Alternative: `python -m src.main`).
 2. **Switch to the Recognition Tab:** Click on the **«🎯 Recognition»** tab.
-3. **Select Camera Source:**
-   - **`💻 Laptop Webcam`:** Automatically selects your integrated front-facing camera.
-   - **`🔌 USB Webcam`:** Direct connection to any plug-and-play external USB camera.
-   - **`📱 Phone Camera (Wi-Fi / IP)`:** Connect to any Android or iPhone IP streaming app (e.g., *IP Webcam*, *DroidCam*) via HTTP/MJPEG/RTSP stream URL.
-   - **`📲 Phone Camera (USB Virtual)`:** Connect to smartphone webcams recognized as standard Windows cameras (e.g., *Iriun*, *DroidCam*, *e2eSoft iVCam*, *Camo*).
-   - **`🔄 Refresh Cameras`:** Scans your system and updates the device list dynamically.
+3. **Select Camera from Unified Dropdown:**
+   - Both your built-in **`HD Webcam (Built-in Laptop Camera)`** and iPhone **`e2eSoft iVCam (iPhone Camera)`** appear simultaneously in the single **Camera** dropdown.
+   - Switch between them instantaneously at any time without disconnecting hardware or restarting the application.
+   - Click the **`🔄 Refresh`** button beside the dropdown to detect newly connected webcams or iVCam sessions.
 4. **Choose AI Recognition Mode:**
    - **`🤟 Sign Language Recognition`:** Translates Arabic sign language using KArSL-502 (502 signs) or custom dialect models.
    - **`📦 Object Detection (YOLOv8)`:** Independent real-time object detection identifying 80 physical objects with high-contrast bounding boxes.
@@ -552,12 +550,11 @@ The system supports smartphones (Android and iPhone/iOS) as primary video source
    - Generic MJPEG format: `http://192.168.1.X:8080/mjpegfeed`
 5. **Connect in App:** In the desktop GUI, select **Phone Camera (Wi-Fi)**, paste your phone's URL (or use the convenient presets dropdown), and click **🔗 Connect**.
 
-#### Method B: USB / Virtual Webcam (Lowest Latency)
-1. **Install Virtual Driver:** Install the PC companion software (e.g., *Iriun 4K Webcam*, *e2eSoft iVCam*, or *DroidCam PC Client*).
-2. **Install Matching Mobile App:** Install the corresponding mobile app on your phone.
-3. **Plug in USB Cable:** Connect your phone to your PC with a USB cable (enabling USB debugging if prompted).
-4. **Launch Apps:** Open the app on your phone and PC; Windows will register the phone as a direct DirectShow webcam.
-5. **Select in GUI:** Click **🔄 Refresh**, choose **📲 Phone Camera (USB Virtual)**, select your phone's camera name from the dropdown, and click **🔗 Connect**.
+#### Method B: iPhone & Smartphone USB / Virtual Webcam (e2eSoft iVCam, DroidCam, Iriun)
+1. **Install Virtual Driver:** Install the PC companion software (e.g., *e2eSoft iVCam*, *Iriun 4K Webcam*, or *DroidCam PC Client*).
+2. **Install Matching Mobile App:** Install the corresponding mobile app on your iPhone or Android phone.
+3. **Connect Device:** Connect your phone via USB cable or Wi-Fi; Windows automatically registers the virtual device in DirectShow.
+4. **Instant Selection:** Open the application, click **`🔄 Refresh`**, and select **`e2eSoft iVCam (iPhone Camera)`** directly from the **Camera** dropdown alongside your built-in **`HD Webcam (Built-in Laptop Camera)`**. Both cameras remain available simultaneously.
 
 ---
 
