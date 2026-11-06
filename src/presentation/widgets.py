@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from typing import Optional
 
 import numpy as np
@@ -12,7 +11,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QRadioButton,
     QSizePolicy,
     QVBoxLayout,
@@ -185,34 +183,34 @@ class StatCard(QFrame):
         self.setObjectName("statCard")
         self.setStyleSheet("""
             QFrame#statCard {
-                background-color: #2d2d2d;
-                border: 1px solid #3c3c3c;
+                background-color: #181d24;
+                border: 1px solid #2b3441;
                 border-radius: 8px;
-                padding: 16px;
+                padding: 12px;
             }
             QFrame#statCard:hover {
-                background-color: #333333;
-                border-color: #007acc;
+                background-color: #1e242d;
+                border-color: #3b4656;
             }
         """)
-        self.setMinimumSize(160, 100)
+        self.setMinimumSize(140, 80)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(4)
 
         if self._icon_text:
             self._icon_label = QLabel(self._icon_text)
-            self._icon_label.setStyleSheet("font-size: 18px; color: #007acc; font-weight: 600;")
+            self._icon_label.setStyleSheet("font-size: 16px; color: #2563eb; font-weight: 600;")
             layout.addWidget(self._icon_label)
 
         self._title_label = QLabel(self._title)
-        self._title_label.setStyleSheet("font-size: 12px; color: #9d9d9d; font-weight: 500;")
+        self._title_label.setStyleSheet("font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;")
         layout.addWidget(self._title_label)
 
         self._value_label = QLabel("--")
         self._value_label.setObjectName("valueLabel")
-        self._value_label.setStyleSheet("font-size: 28px; font-weight: 700; color: #e0e0e0;")
+        self._value_label.setStyleSheet("font-size: 24px; font-weight: 700; color: #f8fafc;")
         layout.addWidget(self._value_label)
 
     @Slot(str)
@@ -261,71 +259,6 @@ class CameraPreview(QLabel):
         )
         self.setPixmap(QPixmap.fromImage(scaled))
 
-
-# ─── Log Viewer ────────────────────────────────────────────────────────
-
-
-class LogViewer(QPlainTextEdit):
-    """Real-time log display with color-coded levels and filtering."""
-
-    LEVEL_COLORS = {
-        "debug": "#9d9d9d",
-        "info": "#e0e0e0",
-        "warning": "#cca700",
-        "error": "#f14c4c",
-        "critical": "#ff0000",
-    }
-
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self.setReadOnly(True)
-        self.setMaximumBlockCount(1000)
-        self.setLineWrapMode(QPlainTextEdit.NoWrap)
-        self._min_level: int = logging.DEBUG
-
-    @Slot(str, str)
-    def append_log(self, level: str, message: str) -> None:
-        import logging
-
-        level_map = {
-            "debug": logging.DEBUG,
-            "info": logging.INFO,
-            "warning": logging.WARNING,
-            "error": logging.ERROR,
-            "critical": logging.CRITICAL,
-        }
-        if level_map.get(level, logging.DEBUG) < self._min_level:
-            return
-
-        color = self.LEVEL_COLORS.get(level, "#e0e0e0")
-        timestamp = __import__("datetime").datetime.now().strftime("%H:%M:%S")
-        formatted = f'<span style="color: {color};">[{timestamp}] [{level.upper()}] {message}</span>'
-        self.appendHtml(formatted)
-
-    def set_min_level(self, level: int) -> None:
-        self._min_level = level
-
-    def clear_logs(self) -> None:
-        self.clear()
-
-    def log_handler(self) -> logging.Handler:
-        """Return a logging.Handler that feeds into this widget."""
-        handler = _LogViewerHandler(self)
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        return handler
-
-
-class _LogViewerHandler(logging.Handler):
-    """Bridge between Python logging and LogViewer widget."""
-
-    def __init__(self, viewer: LogViewer) -> None:
-        super().__init__()
-        self._viewer = viewer
-
-    def emit(self, record: logging.LogRecord) -> None:
-        level = record.levelname.lower()
-        message = self.format(record)
-        self._viewer.append_log(level, message)
 
 
 # ─── Video File Path Selector ──────────────────────────────────────────

@@ -8,7 +8,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-lightgrey.svg)]()
 [![GUI Framework](https://img.shields.io/badge/GUI-PySide6%20(Qt%206)-orange.svg)](https://wiki.qt.io/Qt_for_Python)
 [![Inference Engine](https://img.shields.io/badge/Inference-ONNX%20Runtime%20%7C%20PyTorch%20%7C%20Scikit--Learn-purple.svg)]()
-[![Tests](https://img.shields.io/badge/Tests-238%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-234%20Passed-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
@@ -518,19 +518,18 @@ flowchart TD
    - Both your built-in **`HD Webcam (Built-in Laptop Camera)`** and iPhone **`e2eSoft iVCam (iPhone Camera)`** appear simultaneously in the single **Camera** dropdown.
    - Switch between them instantaneously at any time without disconnecting hardware or restarting the application.
    - Click the **`🔄 Refresh`** button beside the dropdown to detect newly connected webcams or iVCam sessions.
-4. **Choose AI Recognition Mode:**
-   - **`🤟 Sign Language Recognition`:** Translates Arabic sign language using KArSL-502 (502 signs) or custom dialect models.
-   - **`📦 Object Detection (YOLOv8)`:** Independent real-time object detection identifying 80 physical objects with high-contrast bounding boxes.
-   - **`🔀 Combined Mode`:** Concurrently tracks hand landmarks, translates sign gestures, and detects physical objects.
-5. **Interactive Controls & Utilities:**
-   - **`🔗 Connect / 🔌 Disconnect`:** Establish or release camera feeds cleanly.
-   - **`▶ Start / ■ Stop Detection`:** Start or pause real-time AI inference.
-   - **`🪞 Mirror Camera`:** Flips the camera preview horizontally for intuitive user interaction.
-   - **`👁 Hand Landmarks / 📦 Bounding Boxes`:** Toggle visual overlays on or off.
+4. **Choose Sign Recognition Model:**
+   - **`KArSL-502 (502 Standard Signs)`:** Full Spatio-Temporal Transformer recognizing 502 isolated Arabic signs and common vocabulary.
+   - **`Iraqi Custom Classifier`:** Lightweight local classifier trained on custom regional dialect gestures.
+   - Click **`502 Signs List`** to inspect the complete searchable dictionary of all 502 supported Arabic signs.
+5. **Interactive Controls & Sentence Construction:**
+   - **`Start Camera / Stop Camera`:** Toggle real-time capture and AI inference with a single click.
+   - **`Show Landmarks`:** Toggle skeletal hand and pose visual overlays.
+   - **`Mirror Feed`:** Flips the camera preview horizontally for intuitive user interaction.
    - **`Resolution Selector`:** Switch between `640x480 (Fast)` and `1280x720 (HD)`.
-   - **`Confidence Slider`:** Dynamically tune threshold from 20% to 90%.
-   - **`📸 Screenshot`:** Instantly saves annotated frames to `data/captures/screenshot_YYYYMMDD_HHMMSS.png`.
-   - **`🔴 Record Video`:** Records live annotated feed into MP4 files (`data/captures/recording_YYYYMMDD_HHMMSS.mp4`) with a flashing `● REC` indicator.
+   - **`Sentence Builder`:** Recognized words accumulate in the Arabic text box. Use **`Speak (TTS)`** for speech output, **`Space`**, **`Delete Word`**, and **`Clear`**.
+   - **`Toggle Desktop Subtitles`:** Enable or disable floating transparent subtitles directly from the recognition viewport.
+   - **`Screenshot`:** Instantly saves annotated frames to `data/captures/`.
 
 ---
 
@@ -662,16 +661,14 @@ arabic sign language/
 │       └── tabs/                         # 8 modular application tabs
 │           ├── dashboard.py              # Telemetry & system status
 │           ├── dataset.py                # Sample recording & inspection
-│           ├── training.py               # Hyperparameter selection & training
-│           ├── recognition.py            # Live camera recognition tab
-│           ├── overlay.py                # Floating subtitle controls
-│           ├── analytics.py              # Latency & historical metrics
-│           ├── settings.py               # Hardware & resolution settings
-│           └── logs.py                   # Real-time log viewer
-├── tests/                                # Automated test suite (238 tests)
+│           ├── recognition.py            # Live camera recognition tab (unified DirectShow camera, sentence builder)
+│           ├── dataset.py                # Recording studio & sample management
+│           ├── training.py               # Hyperparameter selection & model training
+│           └── settings.py               # Hardware, recognition, overlay & audio settings
+├── tests/                                # Automated test suite (234 tests)
 │   ├── test_karsl.py                     # KArSL-502 engine & TSNSampler tests
 │   ├── test_camera_dropdown_and_switching.py # DirectShow unified camera & switching tests
-│   ├── test_camera_stream_and_yolo.py    # Camera streaming & YOLOv8 detector tests
+│   ├── test_camera_stream_and_yolo.py    # Camera streaming & frame capture tests
 │   ├── test_recognition.py              # Recognition pipeline unit tests
 │   ├── test_hand_detection.py            # Hand tracking & normalization tests
 │   ├── test_text_builder.py              # Arabic BiDi & stabilization tests

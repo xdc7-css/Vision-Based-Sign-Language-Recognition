@@ -92,8 +92,8 @@ class DatasetCollectionTab(QWidget):
         capture_controls.setObjectName("captureControls")
         capture_controls.setStyleSheet("""
             QFrame#captureControls {
-                background-color: #2d2d2d;
-                border: 1px solid #3c3c3c;
+                background-color: #181d24;
+                border: 1px solid #2b3441;
                 border-radius: 8px;
                 padding: 12px;
             }
@@ -101,26 +101,25 @@ class DatasetCollectionTab(QWidget):
         capture_layout = QVBoxLayout(capture_controls)
 
         capture_label = QLabel("Capture Controls")
-        capture_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #e0e0e0;")
+        capture_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #f8fafc;")
         capture_layout.addWidget(capture_label)
 
         # Camera Start/Stop buttons
         cam_btn_row = QHBoxLayout()
-        self._cam_start_btn = QPushButton("▶  Start Camera")
-        self._cam_start_btn.setObjectName("successButton")
-        self._cam_stop_btn = QPushButton("■  Stop Camera")
-        self._cam_stop_btn.setObjectName("dangerButton")
+        self._cam_start_btn = QPushButton("Start Camera")
+        self._cam_start_btn.setObjectName("primaryButton")
+        self._cam_stop_btn = QPushButton("Stop Camera")
         self._cam_stop_btn.setEnabled(False)
         cam_btn_row.addWidget(self._cam_start_btn)
         cam_btn_row.addWidget(self._cam_stop_btn)
         capture_layout.addLayout(cam_btn_row)
 
         capture_btn_row = QHBoxLayout()
-        self._capture_btn = QPushButton("📸  Capture Sample")
+        self._capture_btn = QPushButton("Capture Static Sign")
         self._capture_btn.setObjectName("successButton")
         capture_btn_row.addWidget(self._capture_btn)
 
-        self._batch_capture_btn = QPushButton("📹  Record Sequence")
+        self._batch_capture_btn = QPushButton("Record Dynamic Sequence")
         capture_btn_row.addWidget(self._batch_capture_btn)
 
         count_layout = QHBoxLayout()
@@ -148,8 +147,8 @@ class DatasetCollectionTab(QWidget):
         class_section.setObjectName("classSection")
         class_section.setStyleSheet("""
             QFrame#classSection {
-                background-color: #2d2d2d;
-                border: 1px solid #3c3c3c;
+                background-color: #181d24;
+                border: 1px solid #2b3441;
                 border-radius: 8px;
                 padding: 12px;
             }
@@ -158,7 +157,7 @@ class DatasetCollectionTab(QWidget):
 
         class_header = QHBoxLayout()
         class_label = QLabel("Gesture Classes")
-        class_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #e0e0e0;")
+        class_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #f8fafc;")
         class_header.addWidget(class_label)
         class_header.addStretch()
 

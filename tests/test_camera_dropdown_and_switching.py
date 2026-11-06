@@ -7,7 +7,7 @@ Covers Scenarios A through G as specified in the Windows Camera Integration requ
 - Scenario D: Selecting e2eSoft iVCam opens iPhone camera.
 - Scenario E: Rapid repeated switching between devices without resource leaks.
 - Scenario F: Dynamic disconnect/reconnect and refresh.
-- Scenario G: AI inference (Sign Language + YOLO) on frames from each camera.
+- Scenario G: AI inference (Sign Language Hand Detection) on frames from each camera.
 - Scenario H: Windows diagnostics generator output verification.
 """
 
@@ -24,7 +24,7 @@ from src.application.use_cases import VideoSourceUseCases
 from src.domain.entities import CameraInfo, VideoSourceType
 from src.infrastructure.camera_diagnostics import run_camera_diagnostics
 from src.infrastructure.camera_service import OpenCVCameraService
-from src.infrastructure.object_detection.yolo_detector import YOLOConfig, YOLODetector
+from src.infrastructure.hand_detection.detector import HandDetector
 from src.infrastructure.video_source_engine import WebcamAdapter
 
 
@@ -195,22 +195,23 @@ class TestUnifiedCameraScenarios:
             assert any(c.name == "e2eSoft iVCam" for c in cams2)
 
     def test_scenario_g_ai_inference_on_both_cameras(self):
-        """Scenario G: Sign language & YOLO pipelines process frames from either camera source."""
-        detector = YOLODetector(YOLOConfig(confidence_threshold=0.25))
+        """Scenario G: Sign language hand tracking pipeline processes frames from either camera source."""
+        detector = HandDetector()
 
         # Test frame from camera 0
         frame_cam0 = np.full((480, 640, 3), 100, dtype=np.uint8)
-        dets0 = detector.detect(frame_cam0)
-        assert isinstance(dets0, list)
-        drawn0 = detector.draw_detections(frame_cam0, dets0)
-        assert drawn0.shape == (480, 640, 3)
+        res0 = detector.detect(frame_cam0)
+        assert res0 is not None
+        assert res0.image_width == 640
+        assert res0.image_height == 480
 
         # Test frame from camera 1
         frame_cam1 = np.full((480, 640, 3), 180, dtype=np.uint8)
-        dets1 = detector.detect(frame_cam1)
-        assert isinstance(dets1, list)
-        drawn1 = detector.draw_detections(frame_cam1, dets1)
-        assert drawn1.shape == (480, 640, 3)
+        res1 = detector.detect(frame_cam1)
+        assert res1 is not None
+        assert res1.image_width == 640
+        assert res1.image_height == 480
+        detector.close()
 
 
 class TestCameraDiagnosticsTool:

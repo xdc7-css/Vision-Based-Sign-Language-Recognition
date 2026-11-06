@@ -41,7 +41,7 @@ The diagram below illustrates the exact execution path from camera frame ingesti
 flowchart TD
     A["1. Application Startup<br><code>run.py</code> & <code>src/main.py</code>"] --> B["2. Camera Capture<br><code>camera_service.py</code><br>DirectShow COM: HD Webcam / iVCam"]
     B --> C["3. Hand & Pose Tracking<br><code>detector.py</code><br>MediaPipe: 184 Keypoints"]
-    C --> D["4. Motion & Object Tracking<br><code>tracker.py</code> & <code>yolo_detector.py</code><br>Optical Trajectory + YOLO Context"]
+    C --> D["4. Motion Analysis & Tracking<br><code>tracker.py</code><br>Optical Trajectory & Dynamics"]
     D --> E["5. Feature Extraction & Normalization<br><code>hand_detection/utils.py</code><br>Origin Shift & Scale Normalization"]
     E --> F["6. AI Inference & Model Routing<br><code>hybrid_pipeline.py</code> & <code>onnx_engine.py</code>"]
     F -->|KArSL-502 Isolated Signs| G1["KArSL-502 STTransformer<br><code>karsl_recognizer.py</code>"]
@@ -76,9 +76,8 @@ flowchart TD
 3. **Computer Vision & Landmark Tracking (`src/infrastructure/hand_detection/detector.py`)**:
    - MediaPipe extracts 21 3D hand landmarks per hand, 33 body pose landmarks, and 468 face mesh points.
    - Total of 184 normalized coordinates are structured for classification.
-4. **Motion & Context Tracking (`src/infrastructure/motion_tracking/tracker.py`, `yolo_detector.py`)**:
+4. **Motion Tracking (`src/infrastructure/motion_tracking/tracker.py`)**:
    - Calculates optical velocity, acceleration, and movement trajectories for dynamic gesture boundary detection.
-   - Ultralytics YOLOv8 runs object detection for surrounding context (interacted items).
 5. **Feature Extraction (`src/infrastructure/hand_detection/utils.py`)**:
    - Normalizes coordinates relative to the wrist/palm root, eliminating spatial scale and translation drift.
 6. **AI Model Inference (`src/infrastructure/recognition/hybrid_pipeline.py`)**:
@@ -188,11 +187,10 @@ The pure domain layer contains zero third-party dependencies, guaranteeing maxim
 | `src/infrastructure/hand_detection/renderer.py` | Vision / GUI | Draws hand skeletons, confidence pills, bounding boxes, and landmark connections onto OpenCV frames. | `recognition.py`, `dataset.py` |
 | `src/infrastructure/hand_detection/utils.py` | Vision / Math | Mathematical utility for wrist-relative coordinate normalization, scale invariance, and bounding boxes. | `detector.py`, `recognizer/*` |
 
-#### 3.5.3. Motion & Object Tracking
+#### 3.5.3. Motion Tracking & Spatial Dynamics
 | File Name | Layer | Purpose & Functionality | Interacting Modules |
 | :--- | :--- | :--- | :--- |
 | `src/infrastructure/motion_tracking/tracker.py` | Vision / Physics | `MotionTracker` computing velocity vectors and optical trajectory curves to segment dynamic signs. | `hybrid_pipeline.py`, `domain/motion.py` |
-| `src/infrastructure/object_detection/yolo_detector.py` | Vision / AI | Ultralytics YOLOv8 detector identifying contextual objects interacted with during signing. | `hybrid_pipeline.py`, `recognition.py` |
 
 #### 3.5.4. Machine Learning Inference & Recognizers
 | File Name | Layer | Purpose & Functionality | Interacting Modules |
@@ -235,18 +233,14 @@ The pure domain layer contains zero third-party dependencies, guaranteeing maxim
 | File Name | Layer | Purpose & Functionality | Interacting Modules |
 | :--- | :--- | :--- | :--- |
 | `src/main.py` | GUI / Bootstrap | Application entry point: initializes PySide6, loads styles, wires services, and launches GUI. | All presentation & application layers |
-| `src/presentation/main_window.py` | GUI Shell | Main desktop window: sidebar navigation, tab container, status bar, and system tray integration. | All tabs, `use_cases.py` |
+| `src/presentation/main_window.py` | GUI Shell | Main desktop window: modern tab container, status bar, and system tray integration. | All tabs, `use_cases.py` |
 | `src/presentation/theme.py` | GUI Styling | Dark theme design system: color palette, QSS stylesheets, and consistent typography. | `MainWindow`, widgets |
 | `src/presentation/widgets.py` | GUI Widgets | Custom reusable UI controls: metric cards, status badges, confidence meters, and action buttons. | All tabs |
 | `src/presentation/dialogs/karsl_vocab_dialog.py` | GUI Dialog | Searchable dialog displaying all 502 KArSL signs, English/Arabic glosses, and categories. | `recognition.py` tab |
-| `src/presentation/tabs/recognition.py` | GUI Tab | Core recognition viewport: unified camera dropdown, live video stream, landmark overlay, and speech controls. | `use_cases.py`, `video_source_engine.py` |
-| `src/presentation/tabs/dashboard.py` | GUI Tab | System overview: active hardware indicators, AI model statuses, quick-launch actions. | `ApplicationState` |
+| `src/presentation/tabs/recognition.py` | GUI Tab | Core recognition viewport: DirectShow camera selector (`HD Webcam`, `e2eSoft iVCam`), video preview, skeletal landmark overlay, large Arabic word display, sentence builder, and speech controls. | `use_cases.py`, `video_source_engine.py` |
 | `src/presentation/tabs/dataset.py` | GUI Tab | Interactive recording studio for collecting new sign samples with live countdowns and verification. | `collector.py`, `validator.py` |
 | `src/presentation/tabs/training.py` | GUI Tab | Model training center: triggers local model retraining, displays loss curves and training metrics. | `train_*.py` |
-| `src/presentation/tabs/overlay.py` | GUI Tab | Desktop overlay customizer: opacity slider, font selection, subtitle color picker, and preview. | `overlay_system.py` |
-| `src/presentation/tabs/analytics.py` | GUI Tab | Performance monitoring: real-time latency graphs, FPS meter, and cumulative recognition counters. | `analytics.py` |
-| `src/presentation/tabs/logs.py` | GUI Tab | Live application log console with search, filtering by severity (INFO, WARNING, ERROR), and export. | Python logging |
-| `src/presentation/tabs/settings.py` | GUI Tab | Configuration editor: camera resolution, confidence thresholds, speech rate, and language. | `ConfigManager` |
+| `src/presentation/tabs/settings.py` | GUI Tab | Unified configuration center: camera hardware, sign recognition models, desktop subtitle overlay, and general preferences. | `ConfigManager` |
 
 ---
 
@@ -273,8 +267,6 @@ The pure domain layer contains zero third-party dependencies, guaranteeing maxim
 | `data/models/iraqi/static_svm.pkl` | Pretrained Support Vector Machine (SVM) classifier for Iraqi static gestures. |
 | `data/models/iraqi/classes.json` | List of supported sign classes in the Iraqi dialect. |
 | `data/models/iraqi/vocabulary.json` | Domain vocabulary linking gestures to contextual sentences. |
-| `data/models/yolo/yolov8n.onnx` | Optimized ONNX graph of Ultralytics YOLOv8 nano object detector. |
-| `data/models/yolo/yolov8n.pt` | PyTorch weights for YOLOv8 nano detector. |
 | `data/datasets/` | 356 recorded sample files (`landmarks.npy` and `metadata.json`) for Iraqi dialect signs. |
 
 ---
@@ -291,12 +283,12 @@ The pure domain layer contains zero third-party dependencies, guaranteeing maxim
 
 ### 3.10. Automated Test Suite (`tests/`)
 
-The repository includes a comprehensive automated test suite consisting of **238 tests** providing continuous validation across all layers:
+The repository includes a comprehensive automated test suite consisting of **234 tests** providing continuous validation across all layers:
 
 | Test File | Target Module Tested | Scope & Validated Behaviors |
 | :--- | :--- | :--- |
-| `tests/test_camera_dropdown_and_switching.py` | `camera_service.py`, `recognition.py` | DirectShow device enumeration, concurrent iVCam & HD Webcam detection, async camera switching. |
-| `tests/test_camera_stream_and_yolo.py` | `video_source_engine.py`, `yolo_detector.py` | Video thread capture, FPS throttling, YOLO inference on frames, and bounding box validation. |
+| `tests/test_camera_dropdown_and_switching.py` | `camera_service.py`, `recognition.py` | DirectShow device enumeration, concurrent iVCam & HD Webcam detection, async camera switching, and landmark tracking. |
+| `tests/test_camera_stream_and_yolo.py` | `video_source_engine.py` | Video thread capture, FPS throttling, frame queue decoupling, and camera stream validation. |
 | `tests/test_hand_detection.py` | `detector.py`, `renderer.py`, `utils.py` | MediaPipe keypoint detection, coordinate normalization, bounding box calculations, skeleton rendering. |
 | `tests/test_karsl.py` | `karsl_recognizer.py`, `vocab_dialog.py` | 502-class ONNX inference, label mapping, vocabulary dialog search, and confidence thresholding. |
 | `tests/test_hybrid_pipeline.py` | `hybrid_pipeline.py` | Dynamic vs static routing based on motion velocity, combined mode arbitration, confidence gating. |
@@ -352,4 +344,5 @@ When presenting this project to the examination committee, the architecture can 
 2. **Hardware Resilience**: The unified camera architecture uses native Windows DirectShow COM APIs, allowing real-time switching between built-in laptop webcams (`HD Webcam`) and mobile camera bridges (`e2eSoft iVCam`) without application restarts.
 3. **Multi-Model Hybrid Architecture**: Combines light single-frame classifiers (MLP/SVM) for static alphabet fingerspelling with deep Spatio-Temporal Transformers (ONNX Runtime) for 502 continuous sign language words.
 4. **Desktop Accessibility**: Features a transparent, frameless, non-intrusive subtitle overlay that projects real-time translated Arabic text over video conferencing platforms (Zoom, Teams, Google Meet).
-5. **Academic Reproducibility**: Includes automated dataset versioning manifests, cryptographic checksums, deterministically seeded train/test splits, and a verified 238-test automated test suite.
+5. **Academic Reproducibility**: Includes automated dataset versioning manifests, cryptographic checksums, deterministically seeded train/test splits, and a verified 234-test automated test suite.
+

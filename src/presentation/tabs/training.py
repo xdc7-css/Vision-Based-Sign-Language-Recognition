@@ -139,8 +139,8 @@ class ModelTrainingTab(QWidget):
         config_section.setObjectName("configSection")
         config_section.setStyleSheet("""
             QFrame#configSection {
-                background-color: #2d2d2d;
-                border: 1px solid #3c3c3c;
+                background-color: #181d24;
+                border: 1px solid #2b3441;
                 border-radius: 8px;
                 padding: 16px;
             }
@@ -148,7 +148,7 @@ class ModelTrainingTab(QWidget):
         config_layout = QHBoxLayout(config_section)
 
         # Model type group
-        model_group = QGroupBox("Model Architecture & Target")
+        model_group = QGroupBox("Model Architecture && Target")
         model_form = QFormLayout(model_group)
 
         self._model_type = QComboBox()
@@ -221,8 +221,8 @@ class ModelTrainingTab(QWidget):
         train_section.setObjectName("trainSection")
         train_section.setStyleSheet("""
             QFrame#trainSection {
-                background-color: #2d2d2d;
-                border: 1px solid #3c3c3c;
+                background-color: #181d24;
+                border: 1px solid #2b3441;
                 border-radius: 8px;
                 padding: 16px;
             }
@@ -232,16 +232,15 @@ class ModelTrainingTab(QWidget):
         # Buttons
         btn_row = QHBoxLayout()
 
-        self._train_btn = QPushButton("▶  Start Training")
-        self._train_btn.setObjectName("successButton")
+        self._train_btn = QPushButton("Start Training")
+        self._train_btn.setObjectName("primaryButton")
         btn_row.addWidget(self._train_btn)
 
-        self._stop_btn = QPushButton("■  Stop")
-        self._stop_btn.setObjectName("dangerButton")
+        self._stop_btn = QPushButton("Stop Training")
         self._stop_btn.setEnabled(False)
         btn_row.addWidget(self._stop_btn)
 
-        self._export_btn = QPushButton("📦  Export Model")
+        self._export_btn = QPushButton("Export ONNX Model")
         btn_row.addWidget(self._export_btn)
 
         btn_row.addStretch()

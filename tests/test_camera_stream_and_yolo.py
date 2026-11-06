@@ -1,4 +1,4 @@
-"""Unit and integration tests for Multi-Camera streaming, IP camera, and YOLO object detection."""
+"""Unit and integration tests for Multi-Camera streaming and video sources."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import pytest
 
 from src.domain.entities import CameraInfo, SourceDisconnectedError, SourceNotFoundError, VideoSourceType
 from src.infrastructure.camera_service import OpenCVCameraService
-from src.infrastructure.object_detection.yolo_detector import DetectedObject, YOLOConfig, YOLODetector
 from src.infrastructure.video_source_engine import IPCameraAdapter, VideoSourceFactory, WebcamAdapter
 
 
@@ -174,40 +173,3 @@ class TestVideoSourceFactory:
     def test_factory_creates_enum(self):
         source = VideoSourceFactory.create(VideoSourceType.IP_CAMERA, "http://192.168.1.1:8080/video")
         assert isinstance(source, IPCameraAdapter)
-
-
-class TestYOLODetector:
-    """Test lightweight YOLO object detector."""
-
-    def test_yolo_detector_initialization(self):
-        detector = YOLODetector()
-        assert detector.is_loaded is True
-        assert detector.backend in ("ultralytics", "onnx")
-
-    def test_yolo_detection_on_dummy_frame(self):
-        detector = YOLODetector()
-        dummy_rgb = np.zeros((480, 640, 3), dtype=np.uint8)
-        detections = detector.detect(dummy_rgb, confidence_threshold=0.30)
-        assert isinstance(detections, list)
-
-    def test_yolo_draw_detections(self):
-        detector = YOLODetector()
-        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        mock_detections = [
-            DetectedObject(class_id=0, label="person", confidence=0.88, box=(50, 50, 200, 300)),
-            DetectedObject(class_id=67, label="cell phone", confidence=0.74, box=(250, 100, 350, 250)),
-        ]
-        annotated = detector.draw_detections(dummy_frame, mock_detections, show_boxes=True, show_labels=True)
-        assert annotated.shape == dummy_frame.shape
-        # Pixels should be modified by the drawn boxes and labels
-        assert not np.array_equal(annotated, dummy_frame)
-
-    def test_yolo_onnx_fallback_behavior(self):
-        cfg = YOLOConfig(model_path="nonexistent.pt", onnx_path="data/models/yolo/yolov8n.onnx")
-        detector = YOLODetector(cfg)
-        assert detector.is_loaded is True
-        assert detector.backend == "onnx"
-
-        dummy = np.zeros((480, 640, 3), dtype=np.uint8)
-        res = detector.detect(dummy)
-        assert isinstance(res, list)
