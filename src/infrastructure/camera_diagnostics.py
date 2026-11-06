@@ -165,10 +165,10 @@ def run_camera_diagnostics(output_path: str = "logs/camera_diagnostics.txt") -> 
     lines.append("-" * 78)
     qt_devices: list[dict[str, Any]] = []
     try:
-        from PySide6.QtCore import QCoreApplication
         from PySide6.QtMultimedia import QMediaDevices
+        from PySide6.QtWidgets import QApplication
 
-        _ = QCoreApplication.instance() or QCoreApplication([])
+        _ = QApplication.instance() or QApplication([])
         inputs = QMediaDevices.videoInputs()
         lines.append(f"QMediaDevices video inputs count: {len(inputs)}")
         for idx, dev in enumerate(inputs):
