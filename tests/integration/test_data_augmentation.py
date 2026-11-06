@@ -38,7 +38,7 @@ class TestDatasetAugmenter:
         assert not np.allclose(result, landmarks)  # noise added
 
     def test_deterministic_augmentation(self, augmenter: DatasetAugmenter):
-        img = np.ones((100, 100, 3), dtype=np.uint8) * 128
+        img = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
         result1 = augmenter.augment(img)
         result2 = augmenter.augment(img)
         # Due to randomness, results should differ

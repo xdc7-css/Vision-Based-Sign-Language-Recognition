@@ -44,16 +44,25 @@ class DatasetAugmenter:
     def augment(self, image: np.ndarray) -> np.ndarray:
         result = image.astype(np.float32) / 255.0 if image.dtype != np.float32 else image.copy()
 
+        applied = False
         if random.random() < 0.5:
             result = self._random_rotation(result)
+            applied = True
         if random.random() < 0.5:
             result = self._random_scaling(result)
+            applied = True
         if random.random() < 0.3:
             result = self._random_translation(result)
+            applied = True
         if random.random() < 0.3:
             result = self._add_noise(result)
+            applied = True
         if random.random() < 0.5:
             result = self._adjust_contrast_brightness(result)
+            applied = True
+
+        if not applied:
+            result = self._add_noise(result)
 
         result = np.clip(result * 255.0, 0, 255).astype(np.uint8)
         return result
