@@ -43,6 +43,7 @@ ml = [
 dl = [
     "torch>=2.0.0",
     "onnxruntime>=1.15.0",
+    "ultralytics>=8.0.0",
 ]
 arabic = [
     "arabic-reshaper>=2.1.0",

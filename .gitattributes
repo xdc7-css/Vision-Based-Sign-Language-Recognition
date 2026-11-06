@@ -6,4 +6,5 @@
 *.jpg binary
 *.ico binary
 *.npy binary
+*.pt binary
 

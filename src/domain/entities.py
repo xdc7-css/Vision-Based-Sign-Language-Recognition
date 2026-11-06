@@ -10,6 +10,7 @@ class VideoSourceType(Enum):
     FILE = auto()
     SCREEN = auto()
     WINDOW = auto()
+    IP_CAMERA = auto()
 
     @property
     def display_name(self) -> str:
@@ -18,6 +19,7 @@ class VideoSourceType(Enum):
             VideoSourceType.FILE: "Video File",
             VideoSourceType.SCREEN: "Screen Capture",
             VideoSourceType.WINDOW: "Window Capture",
+            VideoSourceType.IP_CAMERA: "Phone / IP Camera",
         }[self]
 
     @staticmethod
@@ -27,6 +29,10 @@ class VideoSourceType(Enum):
             "file": VideoSourceType.FILE,
             "screen": VideoSourceType.SCREEN,
             "window": VideoSourceType.WINDOW,
+            "ip_camera": VideoSourceType.IP_CAMERA,
+            "phone": VideoSourceType.IP_CAMERA,
+            "stream": VideoSourceType.IP_CAMERA,
+            "ip": VideoSourceType.IP_CAMERA,
         }
         result = mapping.get(value.lower())
         if result is None:
@@ -40,6 +46,8 @@ class CameraInfo:
     name: str
     index: int
     is_available: bool = True
+    device_type: str = "webcam"  # "laptop", "usb", "virtual", "ip_camera"
+    description: str = ""
 
 
 @dataclass(frozen=True)

@@ -137,6 +137,11 @@ class VideoSourceUseCases:
             self._state.pipeline_status = "idle"
             self._state.log("info", "Video source stopped")
 
+    def set_resolution(self, width: int, height: int) -> bool:
+        if self._source is not None and hasattr(self._source, "set_resolution"):
+            return self._source.set_resolution(width, height)
+        return False
+
     def read_frame(self):
         if self._source is None or not self._source.is_open:
             return None

@@ -6,6 +6,7 @@ and register via VideoSourceFactory.register().
 
 from __future__ import annotations
 
+import sys
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -132,7 +133,25 @@ class WebcamAdapter(BaseVideoSource):
     def __init__(self, uri: str) -> None:
         super().__init__(VideoSourceType.WEBCAM, uri)
         self._cap: Optional[cv2.VideoCapture] = None
-        self._backend = cv2.CAP_DSHOW
+        self._backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+
+    def set_resolution(self, width: int, height: int) -> bool:
+        """Dynamically set frame resolution."""
+        if self._cap is not None and self._is_open:
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            actual_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            actual_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            self._properties = SourceProperties(
+                source_type=self._properties.source_type,
+                uri=self._properties.uri,
+                display_name=self._properties.display_name,
+                width=actual_w,
+                height=actual_h,
+                fps=self._properties.fps,
+            )
+            return True
+        return False
 
     def open(self) -> bool:
         try:
@@ -147,13 +166,16 @@ class WebcamAdapter(BaseVideoSource):
             if not self._cap.isOpened():
                 raise SourceNotFoundError(self._uri, VideoSourceType.WEBCAM)
 
-        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+        # Use buffer size 1 to prevent latency accumulation
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-        w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
+        h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
         fps = self._cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0 or fps > 120:
+            fps = 30.0
 
         self._properties = SourceProperties(
             source_type=VideoSourceType.WEBCAM,
@@ -176,6 +198,83 @@ class WebcamAdapter(BaseVideoSource):
             self._is_open = False
             raise SourceDisconnectedError(source_type=VideoSourceType.WEBCAM)
 
+        return self._make_frame(frame)
+
+    def close(self) -> None:
+        self._is_open = False
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None
+        self._fps_monitor.reset()
+
+
+# ─── IP Camera / Smartphone Stream Adapter ─────────────────────────────
+
+
+class IPCameraAdapter(BaseVideoSource):
+    """Network IP Camera and Smartphone Stream Adapter (HTTP, MJPEG, RTSP)."""
+
+    def __init__(self, uri: str) -> None:
+        cleaned_uri = uri
+        for prefix in ("ip_camera:", "stream:", "phone:"):
+            if cleaned_uri.startswith(prefix):
+                cleaned_uri = cleaned_uri[len(prefix):]
+                break
+        super().__init__(VideoSourceType.IP_CAMERA, cleaned_uri)
+        self._cap: Optional[cv2.VideoCapture] = None
+        self._consecutive_failures = 0
+        self._max_failures = 5
+
+    def open(self) -> bool:
+        raw_url = self._uri.strip()
+        if not raw_url:
+            raise SourceNotFoundError(self._uri, VideoSourceType.IP_CAMERA)
+
+        if not (raw_url.startswith("http://") or raw_url.startswith("https://") or raw_url.startswith("rtsp://")):
+            raw_url = "http://" + raw_url
+
+        self._cap = cv2.VideoCapture(raw_url)
+        if not self._cap.isOpened():
+            raise SourceNotFoundError(raw_url, VideoSourceType.IP_CAMERA)
+
+        # Minimize buffering for lowest live stream delay
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
+        h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
+        fps = self._cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0 or fps > 120:
+            fps = 30.0
+
+        self._properties = SourceProperties(
+            source_type=VideoSourceType.IP_CAMERA,
+            uri=raw_url,
+            display_name=f"IP Camera ({raw_url})",
+            width=w,
+            height=h,
+            fps=fps,
+        )
+
+        self._consecutive_failures = 0
+        self._is_open = True
+        return True
+
+    def read(self) -> Optional[Frame]:
+        if self._cap is None or not self._is_open:
+            return None
+
+        ret, frame = self._cap.read()
+        if not ret:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self._max_failures:
+                self._is_open = False
+                raise SourceDisconnectedError(
+                    "Phone camera / IP stream disconnected or lost signal",
+                    source_type=VideoSourceType.IP_CAMERA,
+                )
+            return None
+
+        self._consecutive_failures = 0
         return self._make_frame(frame)
 
     def close(self) -> None:
@@ -512,3 +611,6 @@ VideoSourceFactory.register("webcam", WebcamAdapter)
 VideoSourceFactory.register("file", FileAdapter)
 VideoSourceFactory.register("screen", ScreenCaptureAdapter)
 VideoSourceFactory.register("window", WindowCaptureAdapter)
+VideoSourceFactory.register("ip_camera", IPCameraAdapter)
+VideoSourceFactory.register("stream", IPCameraAdapter)
+VideoSourceFactory.register("phone", IPCameraAdapter)

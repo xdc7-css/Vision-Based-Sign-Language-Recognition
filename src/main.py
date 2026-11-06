@@ -83,6 +83,8 @@ def create_directories() -> None:
         "data/models/saudi",
         "data/models/egyptian",
         "data/models/general",
+        "data/models/yolo",
+        "data/captures",
         "data/datasets/iraqi",
         "data/datasets/saudi",
         "data/datasets/egyptian",

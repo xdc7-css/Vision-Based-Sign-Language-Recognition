@@ -73,7 +73,8 @@ class SourceSelector(QWidget):
         layout.setSpacing(12)
 
         sources = [
-            (VideoSourceType.WEBCAM, "Webcam"),
+            (VideoSourceType.WEBCAM, "Webcam / USB"),
+            (VideoSourceType.IP_CAMERA, "Phone Camera (Wi-Fi)"),
             (VideoSourceType.FILE, "Video File"),
             (VideoSourceType.SCREEN, "Screen Capture"),
             (VideoSourceType.WINDOW, "Window Capture"),

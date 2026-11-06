@@ -1,20 +1,30 @@
 from __future__ import annotations
 
+import logging
+import os
 import queue
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
+import cv2
 import numpy as np
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
+    QFileDialog,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
+    QSlider,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -23,9 +33,13 @@ from PySide6.QtWidgets import (
 from src.application.state import AppState
 from src.application.use_cases import VideoSourceUseCases
 from src.domain.dialect import DialectId
-from src.domain.entities import VideoSourceType
+from src.domain.entities import CameraInfo, VideoSourceType
 from src.infrastructure.analytics import AnalyticsEngine
+from src.infrastructure.camera_service import OpenCVCameraService
 from src.infrastructure.dialect_manager import DialectManager
+from src.infrastructure.hand_detection.detector import HandDetector, HandDetectorConfig
+from src.infrastructure.hand_detection.renderer import HandRenderer
+from src.infrastructure.object_detection.yolo_detector import DetectedObject, YOLODetector
 from src.infrastructure.optimization import PerformanceOptimizer
 from src.infrastructure.recognition.hybrid_pipeline import (
     HybridRecognitionPipeline,
@@ -36,45 +50,69 @@ from src.infrastructure.recognition.karsl_recognizer import (
 )
 from src.infrastructure.text_builder import ArabicTextBuilder
 from src.presentation.dialogs.karsl_vocab_dialog import KArSLVocabularyDialog
+from src.presentation.dialogs.phone_camera_dialog import PhoneCameraGuideDialog
 from src.presentation.widgets import (
     CameraPreview,
     DialectSelector,
-    FilePathSelector,
     SectionHeader,
-    SourceSelector,
     StatCard,
 )
 
 
-class KArSLWorker(QThread):
-    """Background worker thread executing multimodal extraction and ST-Transformer inference."""
+class UnifiedVisionWorker(QThread):
+    """Background worker thread executing multimodal KArSL sign recognition and/or YOLO object detection."""
 
-    loaded = Signal(bool, str)
-    result_ready = Signal(object, object, dict, float)  # (KArSLResult, annotated_frame, vis_info, elapsed_ms)
+    karsl_loaded = Signal(bool, str)
+    yolo_loaded = Signal(bool, str)
+    frame_processed = Signal(object, object, list, dict, float)
     error = Signal(str)
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
-        self._recognizer: Optional[KArSLRecognizer] = None
+        self._karsl: Optional[KArSLRecognizer] = None
+        self._yolo: Optional[YOLODetector] = None
         self._queue: queue.Queue[Optional[np.ndarray]] = queue.Queue(maxsize=1)
         self._running = True
         self._lock = threading.Lock()
 
+        # Configurable processing parameters
+        self.mode = "sign"  # "sign", "yolo", "combined"
+        self.active_engine = "karsl"  # "karsl", "custom"
+        self.mirror = True
+        self.show_landmarks = True
+        self.show_boxes = True
+        self.confidence_threshold = 0.40
+
     @property
-    def recognizer(self) -> Optional[KArSLRecognizer]:
-        return self._recognizer
+    def karsl_recognizer(self) -> Optional[KArSLRecognizer]:
+        return self._karsl
+
+    @property
+    def yolo_detector(self) -> Optional[YOLODetector]:
+        return self._yolo
 
     def run(self) -> None:
+        # 1. Initialize KArSL Recognizer
         try:
-            self._recognizer = KArSLRecognizer()
-            if self._recognizer.is_loaded:
-                self.loaded.emit(True, "KArSL-502 engine loaded successfully")
+            self._karsl = KArSLRecognizer()
+            if self._karsl.is_loaded:
+                self.karsl_loaded.emit(True, "KArSL-502 engine loaded successfully")
             else:
-                self.loaded.emit(False, "Failed to load KArSL-502 engine")
+                self.karsl_loaded.emit(False, "Failed to load KArSL-502 engine")
         except Exception as e:
-            self.loaded.emit(False, str(e))
-            self.error.emit(str(e))
+            self.karsl_loaded.emit(False, str(e))
 
+        # 2. Initialize YOLO Object Detector
+        try:
+            self._yolo = YOLODetector()
+            if self._yolo.is_loaded:
+                self.yolo_loaded.emit(True, f"YOLO detector ready ({self._yolo.backend})")
+            else:
+                self.yolo_loaded.emit(False, "YOLO detector unavailable")
+        except Exception as e:
+            self.yolo_loaded.emit(False, str(e))
+
+        # Main frame loop
         while self._running:
             try:
                 frame = self._queue.get(timeout=0.1)
@@ -86,19 +124,47 @@ class KArSLWorker(QThread):
 
             t0 = time.perf_counter()
             try:
+                # Mirroring if enabled
+                if self.mirror:
+                    frame = cv2.flip(frame, 1)
+
+                annotated = frame.copy()
+                karsl_res: Optional[KArSLResult] = None
+                yolo_detections: list[DetectedObject] = []
+                vis_info: dict = {}
+
                 with self._lock:
-                    if self._recognizer and self._recognizer.is_loaded:
-                        res, ann_frame, vis_info = self._recognizer.process_frame(frame)
-                    else:
-                        res, ann_frame, vis_info = None, frame, {}
+                    # ── Sign Recognition Path ──
+                    if self.mode in ("sign", "combined") and self.active_engine == "karsl":
+                        if self._karsl and self._karsl.is_loaded:
+                            karsl_res, karsl_ann, vis_info = self._karsl.process_frame(frame)
+                            if self.show_landmarks:
+                                annotated = karsl_ann
+
+                    # ── YOLO Object Detection Path ──
+                    if self.mode in ("yolo", "combined"):
+                        if self._yolo and self._yolo.is_loaded:
+                            yolo_detections = self._yolo.detect(
+                                frame,
+                                confidence_threshold=self.confidence_threshold,
+                            )
+                            if self.show_boxes:
+                                annotated = self._yolo.draw_detections(
+                                    annotated,
+                                    yolo_detections,
+                                    show_boxes=self.show_boxes,
+                                    show_labels=True,
+                                )
+
                 elapsed = (time.perf_counter() - t0) * 1000.0
-                self.result_ready.emit(res, ann_frame, vis_info, elapsed)
+                self.frame_processed.emit(annotated, karsl_res, yolo_detections, vis_info, elapsed)
+
             except Exception as ex:
                 self.error.emit(str(ex))
 
     def submit_frame(self, frame: np.ndarray) -> bool:
-        """Submit frame without blocking. Drop old frame if worker is busy."""
-        if not self._running or self._recognizer is None or not self._recognizer.is_loaded:
+        """Non-blocking frame submission with bounded backpressure."""
+        if not self._running:
             return False
         try:
             self._queue.put_nowait(frame)
@@ -115,18 +181,18 @@ class KArSLWorker(QThread):
                 return False
 
     def reset_buffer(self) -> None:
-        """Clear queued frames and recognizer temporal state."""
+        """Clear queued frames and model state."""
         while not self._queue.empty():
             try:
                 self._queue.get_nowait()
             except queue.Empty:
                 break
         with self._lock:
-            if self._recognizer:
-                self._recognizer.reset()
+            if self._karsl:
+                self._karsl.reset()
 
     def stop(self) -> None:
-        """Gracefully stop worker thread."""
+        """Gracefully terminate worker thread."""
         self._running = False
         try:
             self._queue.put_nowait(None)
@@ -135,8 +201,16 @@ class KArSLWorker(QThread):
         self.wait(1500)
 
 
+# Backward-compatible alias for existing tests
+KArSLWorker = UnifiedVisionWorker
+
+
 class RecognitionTab(QWidget):
-    """Live recognition tab supporting KArSL-502 Pretrained Model and Custom Classifier."""
+    """Full-featured Live Camera Recognition tab supporting:
+    - Laptop webcam, external USB webcam, Smartphone camera (Wi-Fi & USB virtual).
+    - Sign Language Recognition (KArSL-502 & Custom), YOLO Object Detection, and Combined Mode.
+    - Screenshot saving, live MP4 video recording, resolution switching, and mirror mode.
+    """
 
     def __init__(
         self,
@@ -157,17 +231,25 @@ class RecognitionTab(QWidget):
         self._dialect_manager = dialect_manager
         self._analytics = analytics
         self._optimizer = optimizer
+        self._camera_service = OpenCVCameraService()
+        self._logger = logging.getLogger(__name__)
 
+        # Current camera / source state
         self._source_type = VideoSourceType.WEBCAM
         self._source_uri = "webcam:0"
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._process_frame)
+        self._is_connected = False
+        self._is_detecting = False
         self._detection_count = 0
 
-        # Custom Hand Detector & Renderer
-        from src.infrastructure.hand_detection.detector import HandDetector, HandDetectorConfig
-        from src.infrastructure.hand_detection.renderer import HandRenderer
+        # Recording state
+        self._is_recording = False
+        self._video_writer: Optional[cv2.VideoWriter] = None
+        self._last_display_frame: Optional[np.ndarray] = None
+        self._record_timer = QTimer(self)
+        self._record_timer.timeout.connect(self._blink_rec_indicator)
+        self._rec_indicator_visible = True
 
+        # Custom Hand Detector & Renderer (for Custom Classifier fallback)
         det_conf = self._optimizer.profile.min_detection_confidence if self._optimizer else 0.30
         det_track = self._optimizer.profile.min_tracking_confidence if self._optimizer else 0.30
         self._detector = HandDetector(HandDetectorConfig(
@@ -177,130 +259,268 @@ class RecognitionTab(QWidget):
         ))
         self._renderer = HandRenderer()
 
-        # Recognition Engine configuration
-        self._active_engine = "karsl"
-        self._karsl_worker = KArSLWorker(self)
-        self._karsl_worker.loaded.connect(self._on_karsl_loaded)
-        self._karsl_worker.result_ready.connect(self._on_karsl_result)
-        self._karsl_worker.error.connect(self._on_karsl_error)
-        self._karsl_worker.start()
+        # Background Vision Worker
+        self._worker = UnifiedVisionWorker(self)
+        self._worker.karsl_loaded.connect(self._on_karsl_loaded)
+        self._worker.yolo_loaded.connect(self._on_yolo_loaded)
+        self._worker.frame_processed.connect(self._on_frame_processed)
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.start()
+
+        # Capture polling timer (~30 FPS)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._read_next_frame)
 
         self._setup_ui()
+        self._refresh_camera_list()
         self._connect_signals()
 
+    # ── UI Construction ──────────────────────────────────────────────────
+
     def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 16, 24, 16)
-        layout.setSpacing(16)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(18, 12, 18, 12)
+        main_layout.setSpacing(12)
 
         header = SectionHeader(
-            "Real-Time Recognition",
-            "Live sign language recognition — KArSL-502 Pretrained Engine & Custom Classifier",
+            "Live Camera & Vision Recognition",
+            "Multi-source camera input (Laptop, USB, Smartphone Wi-Fi/USB) with Sign Language & YOLO Detection",
         )
-        layout.addWidget(header)
+        main_layout.addWidget(header)
 
-        # Source & Engine controls
-        source_bar = QFrame()
-        source_bar.setObjectName("sourceBar")
-        source_bar.setStyleSheet("""
-            QFrame#sourceBar {
-                background-color: #2d2d2d;
+        # ─── Panel 1: Camera Source & Connection Panel ───────────────────
+        camera_panel = QFrame()
+        camera_panel.setObjectName("cameraPanel")
+        camera_panel.setStyleSheet("""
+            QFrame#cameraPanel {
+                background-color: #252526;
                 border: 1px solid #3c3c3c;
                 border-radius: 8px;
-                padding: 12px;
+                padding: 10px;
             }
         """)
-        source_layout = QHBoxLayout(source_bar)
-        source_layout.setSpacing(14)
+        cam_vlayout = QVBoxLayout(camera_panel)
+        cam_vlayout.setSpacing(8)
 
-        source_layout.addWidget(QLabel("Source:"))
-        self._source_selector = SourceSelector()
-        source_layout.addWidget(self._source_selector)
+        # Row 1: Source Category + Device Selector + Refresh + Connect / Disconnect + Status
+        r1_layout = QHBoxLayout()
+        r1_layout.setSpacing(10)
 
-        source_layout.addWidget(QLabel("Device:"))
-        self._file_selector = FilePathSelector()
-        self._file_selector.setVisible(False)
-        source_layout.addWidget(self._file_selector)
+        r1_layout.addWidget(QLabel("<b>Camera Source:</b>"))
+        self._source_cat_combo = QComboBox()
+        self._source_cat_combo.addItem("💻  Laptop Webcam", "laptop")
+        self._source_cat_combo.addItem("🔌  USB Webcam", "usb")
+        self._source_cat_combo.addItem("📱  Phone Camera (Wi-Fi / IP)", "phone_wifi")
+        self._source_cat_combo.addItem("📲  Phone Camera (USB Virtual)", "phone_usb")
+        self._source_cat_combo.addItem("📁  Video File", "file")
+        self._source_cat_combo.setMinimumWidth(210)
+        r1_layout.addWidget(self._source_cat_combo)
 
-        self._start_btn = QPushButton("▶  Start")
-        self._start_btn.setObjectName("successButton")
-        source_layout.addWidget(self._start_btn)
+        # Device combo for hardware/virtual cameras
+        self._device_combo = QComboBox()
+        self._device_combo.setMinimumWidth(220)
+        r1_layout.addWidget(self._device_combo)
 
-        self._stop_btn = QPushButton("■  Stop")
-        self._stop_btn.setObjectName("dangerButton")
-        self._stop_btn.setEnabled(False)
-        source_layout.addWidget(self._stop_btn)
+        # IP URL container for Wi-Fi stream
+        self._ip_container = QWidget()
+        ip_layout = QHBoxLayout(self._ip_container)
+        ip_layout.setContentsMargins(0, 0, 0, 0)
+        ip_layout.setSpacing(6)
 
-        # Engine selector
-        source_layout.addSpacing(12)
-        source_layout.addWidget(QLabel("Engine:"))
-        self._engine_selector = QComboBox()
-        self._engine_selector.addItem("KArSL-502 — Pretrained (502 Signs)", "karsl")
-        self._engine_selector.addItem("Custom Sign Classifier", "custom")
-        self._engine_selector.setStyleSheet("""
+        self._ip_url_edit = QLineEdit()
+        self._ip_url_edit.setPlaceholderText("http://192.168.1.X:8080/video (or RTSP)")
+        self._ip_url_edit.setText("http://192.168.1.100:8080/video")
+        self._ip_url_edit.setMinimumWidth(230)
+        ip_layout.addWidget(self._ip_url_edit)
+
+        self._ip_preset_combo = QComboBox()
+        self._ip_preset_combo.addItem("Presets...", "")
+        self._ip_preset_combo.addItem("Android IP Webcam (:8080/video)", "ipwebcam")
+        self._ip_preset_combo.addItem("DroidCam (:4747/video)", "droidcam")
+        self._ip_preset_combo.addItem("Generic MJPEG (:8080/mjpegfeed)", "mjpeg")
+        self._ip_preset_combo.addItem("RTSP Stream (:8554/live)", "rtsp")
+        ip_layout.addWidget(self._ip_preset_combo)
+
+        self._phone_guide_btn = QPushButton("ℹ Guide")
+        self._phone_guide_btn.setToolTip("Open step-by-step Smartphone Camera instructions")
+        ip_layout.addWidget(self._phone_guide_btn)
+
+        self._ip_container.setVisible(False)
+        r1_layout.addWidget(self._ip_container)
+
+        # File path selector container
+        self._file_container = QWidget()
+        file_layout = QHBoxLayout(self._file_container)
+        file_layout.setContentsMargins(0, 0, 0, 0)
+        file_layout.setSpacing(6)
+        self._file_path_edit = QLineEdit()
+        self._file_path_edit.setPlaceholderText("Select video file...")
+        file_layout.addWidget(self._file_path_edit)
+        self._file_browse_btn = QPushButton("Browse...")
+        file_layout.addWidget(self._file_browse_btn)
+        self._file_container.setVisible(False)
+        r1_layout.addWidget(self._file_container)
+
+        self._refresh_cam_btn = QPushButton("🔄 Refresh")
+        self._refresh_cam_btn.setToolTip("Scan system for newly connected USB or virtual webcams")
+        r1_layout.addWidget(self._refresh_cam_btn)
+
+        r1_layout.addSpacing(8)
+
+        # Connect / Disconnect Buttons
+        self._connect_btn = QPushButton("🔗  Connect")
+        self._connect_btn.setObjectName("primaryButton")
+        r1_layout.addWidget(self._connect_btn)
+
+        self._disconnect_btn = QPushButton("🔌  Disconnect")
+        self._disconnect_btn.setEnabled(False)
+        r1_layout.addWidget(self._disconnect_btn)
+
+        # Connection Status Badge
+        self._status_badge = QLabel("⚪ Disconnected")
+        self._status_badge.setStyleSheet("""
+            background-color: #1e1e1e;
+            color: #9d9d9d;
+            border: 1px solid #3c3c3c;
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-weight: 600;
+        """)
+        r1_layout.addWidget(self._status_badge)
+
+        cam_vlayout.addLayout(r1_layout)
+
+        # Row 2: AI Mode + Engine + Detection Controls + Toggles
+        r2_layout = QHBoxLayout()
+        r2_layout.setSpacing(12)
+
+        r2_layout.addWidget(QLabel("<b>AI Mode:</b>"))
+        self._ai_mode_combo = QComboBox()
+        self._ai_mode_combo.addItem("🤟  Sign Language Recognition", "sign")
+        self._ai_mode_combo.addItem("📦  Object Detection (YOLOv8)", "yolo")
+        self._ai_mode_combo.addItem("🔀  Combined Mode (Sign + YOLO)", "combined")
+        self._ai_mode_combo.setStyleSheet("""
             QComboBox {
                 background-color: #1e1e1e;
                 border: 1px solid #007acc;
                 border-radius: 4px;
-                padding: 4px 10px;
+                padding: 4px 8px;
                 color: #ffffff;
                 font-weight: 600;
             }
         """)
-        source_layout.addWidget(self._engine_selector)
+        r2_layout.addWidget(self._ai_mode_combo)
+
+        # Engine selector
+        self._engine_label = QLabel("Engine:")
+        r2_layout.addWidget(self._engine_label)
+        self._engine_selector = QComboBox()
+        self._engine_selector.addItem("KArSL-502 (502 Signs)", "karsl")
+        self._engine_selector.addItem("Custom Classifier", "custom")
+        r2_layout.addWidget(self._engine_selector)
 
         self._vocab_btn = QPushButton("📖 502 Signs")
         self._vocab_btn.setToolTip("View full dictionary of 502 supported Arabic signs")
-        self._vocab_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #264f78;
-                border: 1px solid #007acc;
-                border-radius: 4px;
-                padding: 5px 12px;
-                color: #ffffff;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #3168a3;
-            }
-        """)
-        source_layout.addWidget(self._vocab_btn)
+        r2_layout.addWidget(self._vocab_btn)
 
-        layout.addWidget(source_bar)
+        r2_layout.addSpacing(8)
 
-        # Main content: preview + results
+        # Detection Start / Stop
+        self._start_btn = QPushButton("▶  Start Detection")
+        self._start_btn.setObjectName("successButton")
+        self._start_btn.setEnabled(False)
+        r2_layout.addWidget(self._start_btn)
+
+        self._stop_btn = QPushButton("■  Stop Detection")
+        self._stop_btn.setObjectName("dangerButton")
+        self._stop_btn.setEnabled(False)
+        r2_layout.addWidget(self._stop_btn)
+
+        r2_layout.addStretch()
+
+        # Resolution dropdown
+        r2_layout.addWidget(QLabel("Resolution:"))
+        self._resolution_combo = QComboBox()
+        self._resolution_combo.addItem("640x480 (Fast)", (640, 480))
+        self._resolution_combo.addItem("1280x720 (HD)", (1280, 720))
+        r2_layout.addWidget(self._resolution_combo)
+
+        cam_vlayout.addLayout(r2_layout)
+
+        # Row 3: Quick Toggles (Mirror, Landmarks, Bounding Boxes, Confidence Slider, Tools)
+        r3_layout = QHBoxLayout()
+        r3_layout.setSpacing(14)
+
+        self._mirror_check = QCheckBox("🪞 Mirror Camera")
+        self._mirror_check.setChecked(True)
+        r3_layout.addWidget(self._mirror_check)
+
+        self._landmarks_check = QCheckBox("👁 Hand Landmarks")
+        self._landmarks_check.setChecked(True)
+        r3_layout.addWidget(self._landmarks_check)
+
+        self._boxes_check = QCheckBox("📦 Bounding Boxes")
+        self._boxes_check.setChecked(True)
+        r3_layout.addWidget(self._boxes_check)
+
+        # Confidence Slider
+        r3_layout.addWidget(QLabel("Confidence:"))
+        self._conf_slider = QSlider(Qt.Horizontal)
+        self._conf_slider.setRange(20, 90)
+        self._conf_slider.setValue(40)
+        self._conf_slider.setMaximumWidth(120)
+        r3_layout.addWidget(self._conf_slider)
+        self._conf_label = QLabel("40%")
+        self._conf_label.setMinimumWidth(32)
+        r3_layout.addWidget(self._conf_label)
+
+        r3_layout.addStretch()
+
+        # Screenshot & Video Recording buttons
+        self._screenshot_btn = QPushButton("📸 Screenshot")
+        self._screenshot_btn.setToolTip("Save current annotated frame to data/captures/")
+        r3_layout.addWidget(self._screenshot_btn)
+
+        self._record_btn = QPushButton("🔴 Record Video")
+        self._record_btn.setToolTip("Record live stream to MP4 in data/captures/")
+        r3_layout.addWidget(self._record_btn)
+
+        cam_vlayout.addLayout(r3_layout)
+        main_layout.addWidget(camera_panel)
+
+        # ─── Main Content Splitter: Left Preview | Right Recognition / Translation ───
         content_splitter = QSplitter(Qt.Horizontal)
 
-        # Left: Camera preview
+        # Left Column: Preview + Stats
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 8, 0)
+        left_layout.setContentsMargins(0, 0, 6, 0)
         left_layout.setSpacing(8)
 
         self._preview = CameraPreview()
         left_layout.addWidget(self._preview, stretch=1)
 
-        # Stats row
+        # Stats Cards
         stats_row = QHBoxLayout()
-        self._fps_card = StatCard("FPS", "0")
+        self._fps_card = StatCard("FPS", "0.0")
         stats_row.addWidget(self._fps_card)
         self._latency_card = StatCard("Latency", "-- ms")
         stats_row.addWidget(self._latency_card)
         self._detections_card = StatCard("Detections", "0")
         stats_row.addWidget(self._detections_card)
-        self._decision_card = StatCard("Decision Path", "Initializing...")
+        self._decision_card = StatCard("Status", "Ready")
         stats_row.addWidget(self._decision_card)
         left_layout.addLayout(stats_row)
 
         content_splitter.addWidget(left_widget)
 
-        # Right: Recognition results
+        # Right Column: Output & Controls
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(8, 0, 0, 0)
+        right_layout.setContentsMargins(6, 0, 0, 0)
         right_layout.setSpacing(8)
 
-        # Caption display
+        # Translation / Detection Output Box
         caption_box = QFrame()
         caption_box.setObjectName("captionBox")
         caption_box.setStyleSheet("""
@@ -308,28 +528,29 @@ class RecognitionTab(QWidget):
                 background-color: #1a1a1a;
                 border: 2px solid #007acc;
                 border-radius: 8px;
-                padding: 16px;
+                padding: 14px;
             }
         """)
         caption_layout = QVBoxLayout(caption_box)
-        caption_layout.addWidget(QLabel("Translation Output"))
-        self._caption_label = QLabel("Initializing KArSL-502 engine...")
-        self._caption_label.setStyleSheet("font-size: 24px; font-weight: 700; color: #4ec9b0;")
+        caption_layout.addWidget(QLabel("Live Output & Translation"))
+
+        self._caption_label = QLabel("Select camera and click Connect to start")
+        self._caption_label.setStyleSheet("font-size: 22px; font-weight: 700; color: #4ec9b0;")
         self._caption_label.setAlignment(Qt.AlignCenter)
-        self._caption_label.setMinimumHeight(60)
+        self._caption_label.setMinimumHeight(55)
+        self._caption_label.setWordWrap(True)
         caption_layout.addWidget(self._caption_label)
 
-        # Current word
         word_layout = QHBoxLayout()
-        word_layout.addWidget(QLabel("Current Word:"))
+        word_layout.addWidget(QLabel("Current Word / Sign:"))
         self._word_label = QLabel("")
-        self._word_label.setStyleSheet("font-size: 20px; color: #e0e0e0;")
+        self._word_label.setStyleSheet("font-size: 18px; color: #e0e0e0; font-weight: 600;")
         word_layout.addWidget(self._word_label, stretch=1)
         caption_layout.addLayout(word_layout)
 
         right_layout.addWidget(caption_box)
 
-        # Control buttons (clear, delete, space)
+        # Text manipulation buttons (Clear, Delete, Space)
         ctrl_bar = QHBoxLayout()
         self._clear_btn = QPushButton("🗑 Clear")
         self._clear_btn.setObjectName("dangerButton")
@@ -340,15 +561,15 @@ class RecognitionTab(QWidget):
         ctrl_bar.addWidget(self._space_btn)
         right_layout.addLayout(ctrl_bar)
 
-        # Gesture history
-        history_label = QLabel("Recognition History")
-        history_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #e0e0e0;")
-        right_layout.addWidget(history_label)
-
+        # Recognition & Detection History
+        history_box = QGroupBox("Recognition & Detection History")
+        hist_layout = QVBoxLayout(history_box)
+        hist_layout.setContentsMargins(6, 8, 6, 6)
         self._history_list = QListWidget()
-        right_layout.addWidget(self._history_list, stretch=1)
+        hist_layout.addWidget(self._history_list)
+        right_layout.addWidget(history_box, stretch=1)
 
-        # Dialect selector
+        # Dialect selector row
         dialect_row = QHBoxLayout()
         dialect_row.addWidget(QLabel("Dialect:"))
         self._dialect_selector = DialectSelector()
@@ -369,185 +590,474 @@ class RecognitionTab(QWidget):
         right_layout.addLayout(dialect_row)
 
         content_splitter.addWidget(right_widget)
-        content_splitter.setSizes([550, 350])
+        content_splitter.setSizes([580, 360])
+        main_layout.addWidget(content_splitter, stretch=1)
 
-        layout.addWidget(content_splitter, stretch=1)
+    # ── Signal Connections ───────────────────────────────────────────────
 
     def _connect_signals(self) -> None:
-        self._source_selector.source_changed.connect(self._on_source_type_changed)
-        self._file_selector.path_selected.connect(self._on_file_selected)
-        self._start_btn.clicked.connect(self._start_recognition)
-        self._stop_btn.clicked.connect(self._stop_recognition)
-        self._dialect_selector.dialect_selected.connect(self._on_dialect_selected)
+        # Camera & Source controls
+        self._source_cat_combo.currentIndexChanged.connect(self._on_category_changed)
+        self._refresh_cam_btn.clicked.connect(self._refresh_camera_list)
+        self._ip_preset_combo.currentIndexChanged.connect(self._on_ip_preset_changed)
+        self._phone_guide_btn.clicked.connect(self._open_phone_guide)
+        self._file_browse_btn.clicked.connect(self._browse_file)
+        self._connect_btn.clicked.connect(self._connect_camera)
+        self._disconnect_btn.clicked.connect(self._disconnect_camera)
+
+        # AI Mode & Engine
+        self._ai_mode_combo.currentIndexChanged.connect(self._on_ai_mode_changed)
         self._engine_selector.currentIndexChanged.connect(self._on_engine_changed)
         self._vocab_btn.clicked.connect(self._show_karsl_vocab)
 
+        # Start / Stop
+        self._start_btn.clicked.connect(self._start_detection)
+        self._stop_btn.clicked.connect(self._stop_detection)
+
+        # Toggles & Adjustments
+        self._mirror_check.toggled.connect(self._on_mirror_toggled)
+        self._landmarks_check.toggled.connect(self._on_landmarks_toggled)
+        self._boxes_check.toggled.connect(self._on_boxes_toggled)
+        self._conf_slider.valueChanged.connect(self._on_conf_changed)
+        self._resolution_combo.currentIndexChanged.connect(self._on_resolution_changed)
+
+        # Tools
+        self._screenshot_btn.clicked.connect(self._take_screenshot)
+        self._record_btn.clicked.connect(self._toggle_recording)
+
+        # Text operations
         self._clear_btn.clicked.connect(self._clear_text)
         self._delete_btn.clicked.connect(self._delete_last)
         self._space_btn.clicked.connect(self._add_space)
 
-        self._state.frame_received.connect(self._preview.display_frame)
+        # Dialect
+        self._dialect_selector.dialect_selected.connect(self._on_dialect_selected)
+
+        # App state sync
         self._state.fps_updated.connect(lambda f: self._fps_card.set_value(f"{f:.1f}"))
         self._state.caption_updated.connect(self._caption_label.setText)
-        self._state.gesture_detected.connect(self._on_gesture_detected)
         self._state.pipeline_status_changed.connect(self._on_status_changed)
-        if hasattr(self._state, "active_dialect_changed"):
-            self._state.active_dialect_changed.connect(self._sync_dialect_selector)
 
-    def _sync_dialect_selector(self, dialect_info: Optional[object]) -> None:
-        if dialect_info is None:
-            return
-        target_id = getattr(dialect_info, "dialect_id", "") or (dialect_info.id.value if hasattr(dialect_info, "id") else "")
-        self._dialect_selector.blockSignals(True)
-        for idx in range(self._dialect_selector.count()):
-            if self._dialect_selector.itemData(idx) == target_id:
-                self._dialect_selector.setCurrentIndex(idx)
-                break
-        self._dialect_selector.blockSignals(False)
+    # ── Camera Enumeration & Source Management ───────────────────────────
 
-    def _on_source_type_changed(self, source_type: VideoSourceType) -> None:
-        self._source_type = source_type
-        is_file = source_type == VideoSourceType.FILE
-        self._file_selector.setVisible(is_file)
-        if self._karsl_worker:
-            self._karsl_worker.reset_buffer()
-        self._stop_recognition()
+    def _refresh_camera_list(self) -> None:
+        """Scan system devices and update the camera dropdown."""
+        self._state.log("info", "Enumerating connected video devices...")
+        cameras = self._camera_service.list_cameras(force_refresh=True)
 
-    def _on_file_selected(self, path: str) -> None:
-        self._source_uri = path
-        if self._karsl_worker:
-            self._karsl_worker.reset_buffer()
+        selected_cat = self._source_cat_combo.currentData()
+        self._device_combo.blockSignals(True)
+        self._device_combo.clear()
 
-    def _on_engine_changed(self, index: int) -> None:
-        engine_key = self._engine_selector.currentData()
-        self._active_engine = engine_key
-        if self._karsl_worker:
-            self._karsl_worker.reset_buffer()
-        self._vocab_btn.setVisible(engine_key == "karsl")
+        filtered_cams: list[CameraInfo] = []
+        for cam in cameras:
+            if selected_cat == "laptop" and cam.device_type == "laptop":
+                filtered_cams.append(cam)
+            elif selected_cat == "usb" and cam.device_type == "usb":
+                filtered_cams.append(cam)
+            elif selected_cat == "phone_usb" and cam.device_type == "virtual":
+                filtered_cams.append(cam)
 
-        if engine_key == "karsl":
-            if self._karsl_worker and self._karsl_worker.recognizer and self._karsl_worker.recognizer.is_loaded:
-                self._decision_card.set_value("KArSL-502 Ready")
-                self._caption_label.setText("[KArSL-502 Ready — 502 Signs Available]")
-            else:
-                self._decision_card.set_value("Loading...")
-                self._caption_label.setText("[Loading KArSL-502 models...]")
-            self._state.log("info", "Switched recognition engine to KArSL-502 Pretrained.")
-        else:
-            self._decision_card.set_value("Custom Ready")
-            self._caption_label.setText("...")
-            self._state.log("info", "Switched recognition engine to Custom Sign Classifier.")
+        # Fallback if no specific category matched but cameras exist
+        if not filtered_cams and selected_cat in ("laptop", "usb", "phone_usb"):
+            filtered_cams = cameras
 
-    def _show_karsl_vocab(self) -> None:
-        vocab = []
-        if self._karsl_worker and self._karsl_worker.recognizer:
-            vocab = self._karsl_worker.recognizer.get_vocabulary()
-        dlg = KArSLVocabularyDialog(vocabulary=vocab if vocab else None, parent=self)
+        for cam in filtered_cams:
+            status = "✓" if cam.is_available else "✕"
+            icon = "💻" if cam.device_type == "laptop" else ("📱" if cam.device_type == "virtual" else "🔌")
+            label = f"{icon} [{cam.index}] {cam.name} ({status})"
+            self._device_combo.addItem(label, cam.id)
+
+        self._device_combo.blockSignals(False)
+        self._state.log("info", f"Discovered {len(cameras)} video device(s).")
+
+    def _on_category_changed(self, index: int) -> None:
+        cat = self._source_cat_combo.currentData()
+        is_hardware = cat in ("laptop", "usb", "phone_usb")
+        is_ip = cat == "phone_wifi"
+        is_file = cat == "file"
+
+        self._device_combo.setVisible(is_hardware)
+        self._refresh_cam_btn.setVisible(is_hardware)
+        self._ip_container.setVisible(is_ip)
+        self._file_container.setVisible(is_file)
+
+        if is_hardware:
+            self._refresh_camera_list()
+
+    def _on_ip_preset_changed(self, index: int) -> None:
+        preset = self._ip_preset_combo.currentData()
+        current_text = self._ip_url_edit.text()
+
+        # Extract current host IP or default to 192.168.1.100
+        import re
+        m = re.search(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", current_text)
+        ip = m.group(1) if m else "192.168.1.100"
+
+        if preset == "ipwebcam":
+            self._ip_url_edit.setText(f"http://{ip}:8080/video")
+        elif preset == "droidcam":
+            self._ip_url_edit.setText(f"http://{ip}:4747/video")
+        elif preset == "mjpeg":
+            self._ip_url_edit.setText(f"http://{ip}:8080/mjpegfeed")
+        elif preset == "rtsp":
+            self._ip_url_edit.setText(f"rtsp://{ip}:8554/live")
+
+    def _open_phone_guide(self) -> None:
+        dlg = PhoneCameraGuideDialog(self)
         dlg.exec()
 
-    def _on_karsl_loaded(self, success: bool, msg: str) -> None:
+    def _browse_file(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Video File",
+            "",
+            "Video Files (*.mp4 *.avi *.mov *.mkv *.wmv);;All Files (*.*)",
+        )
+        if file_path:
+            self._file_path_edit.setText(file_path)
+
+    def _set_status_badge(self, status: str, text: str) -> None:
+        colors = {
+            "connected": ("#98c379", "🟢"),
+            "connecting": ("#e5c07b", "🟡"),
+            "disconnected": ("#9d9d9d", "⚪"),
+            "error": ("#e06c75", "🔴"),
+        }
+        color, icon = colors.get(status, ("#9d9d9d", "⚪"))
+        self._status_badge.setText(f"{icon} {text}")
+        self._status_badge.setStyleSheet(f"""
+            background-color: #1e1e1e;
+            color: {color};
+            border: 1px solid {color};
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-weight: 600;
+        """)
+
+    # ── Camera Connection / Disconnection ────────────────────────────────
+
+    def _connect_camera(self) -> None:
+        """Establish connection with the selected camera or stream."""
+        cat = self._source_cat_combo.currentData()
+        self._set_status_badge("connecting", "Connecting...")
+        self._caption_label.setText("Connecting to camera stream...")
+
+        if cat in ("laptop", "usb", "phone_usb"):
+            self._source_type = VideoSourceType.WEBCAM
+            cam_id = self._device_combo.currentData() or "webcam:0"
+            self._source_uri = cam_id
+
+        elif cat == "phone_wifi":
+            self._source_type = VideoSourceType.IP_CAMERA
+            raw_url = self._ip_url_edit.text().strip()
+            if not raw_url:
+                QMessageBox.warning(self, "Invalid URL", "Please enter a valid smartphone stream URL.")
+                self._set_status_badge("disconnected", "Disconnected")
+                return
+            self._source_uri = raw_url
+
+        elif cat == "file":
+            self._source_type = VideoSourceType.FILE
+            file_path = self._file_path_edit.text().strip()
+            if not file_path or not os.path.exists(file_path):
+                QMessageBox.warning(self, "Invalid File", "Please select an existing video file.")
+                self._set_status_badge("disconnected", "Disconnected")
+                return
+            self._source_uri = file_path
+
+        # Attempt opening source
+        success = self._source_use_cases.start_source(self._source_type, self._source_uri)
         if success:
-            self._state.log("info", f"KArSL-502 Engine: {msg}")
-            if self._active_engine == "karsl":
-                self._decision_card.set_value("KArSL-502 Ready")
-                self._caption_label.setText("[KArSL-502 Ready — 502 Signs Available]")
+            self._is_connected = True
+            self._connect_btn.setEnabled(False)
+            self._disconnect_btn.setEnabled(True)
+            self._start_btn.setEnabled(True)
+            self._set_status_badge("connected", "Connected")
+            self._caption_label.setText("Camera connected. Click 'Start Detection' to begin.")
+            self._state.log("info", f"Successfully connected to camera: {self._source_uri}")
+
+            # Apply selected resolution if webcam
+            res_w, res_h = self._resolution_combo.currentData()
+            self._source_use_cases.set_resolution(res_w, res_h)
+
+            # Automatically start frame polling
+            self._timer.start(33)
         else:
-            self._state.log("error", f"KArSL-502 Engine error: {msg}")
-            if self._active_engine == "karsl":
-                self._decision_card.set_value("Load Error")
-                self._caption_label.setText(f"[KArSL Load Error: {msg}]")
+            self._is_connected = False
+            self._set_status_badge("error", "Connection Error")
+            self._caption_label.setText("Failed to connect to camera. Check device or URL.")
+            self._state.error(f"Failed to connect to {self._source_uri}")
 
-    def _on_karsl_error(self, err: str) -> None:
-        self._state.log("warning", f"KArSL Worker error: {err}")
+    def _disconnect_camera(self) -> None:
+        """Disconnect and release camera resources cleanly."""
+        self._stop_detection()
+        self._timer.stop()
+        self._source_use_cases.stop_source()
 
-    def _on_karsl_result(
+        self._is_connected = False
+        self._connect_btn.setEnabled(True)
+        self._disconnect_btn.setEnabled(False)
+        self._start_btn.setEnabled(False)
+        self._set_status_badge("disconnected", "Disconnected")
+        self._caption_label.setText("Camera disconnected.")
+        self._fps_card.set_value("0.0")
+        self._latency_card.set_value("-- ms")
+        self._decision_card.set_value("Disconnected")
+
+    # ── Detection Start / Stop ───────────────────────────────────────────
+
+    def _start_detection(self) -> None:
+        if not self._is_connected:
+            self._connect_camera()
+            if not self._is_connected:
+                return
+
+        self._is_detecting = True
+        self._start_btn.setEnabled(False)
+        self._stop_btn.setEnabled(True)
+        self._decision_card.set_value("Running")
+
+        mode = self._ai_mode_combo.currentData()
+        if mode == "sign":
+            self._caption_label.setText("Sign Language Recognition active — hold hand in view")
+        elif mode == "yolo":
+            self._caption_label.setText("Object Detection active — detecting objects")
+        else:
+            self._caption_label.setText("Combined Mode active — detecting signs and objects")
+
+    def _stop_detection(self) -> None:
+        self._is_detecting = False
+        self._start_btn.setEnabled(self._is_connected)
+        self._stop_btn.setEnabled(False)
+        if self._worker:
+            self._worker.reset_buffer()
+        if self._is_recording:
+            self._toggle_recording()
+        self._decision_card.set_value("Paused")
+
+    # ── Frame Ingestion & Processing ─────────────────────────────────────
+
+    def _read_next_frame(self) -> None:
+        """Fetch frame from video source use cases and forward to background worker."""
+        if self._analytics:
+            self._analytics.record_frame()
+
+        frame_result = self._source_use_cases.read_frame()
+        if frame_result is None or frame_result.data is None:
+            return
+
+        frame = frame_result.data  # RGB array
+
+        # If detection is not running, just display raw frame directly
+        if not self._is_detecting:
+            display_frame = cv2.flip(frame, 1) if self._mirror_check.isChecked() else frame
+            self._last_display_frame = display_frame
+            self._preview.display_frame(display_frame)
+            return
+
+        # Frame skipping optimization if enabled
+        if self._optimizer and not self._optimizer.should_process_frame():
+            display_frame = cv2.flip(frame, 1) if self._mirror_check.isChecked() else frame
+            self._preview.display_frame(display_frame)
+            return
+
+        # Submit to worker thread for asynchronous inference
+        self._worker.submit_frame(frame)
+
+    @Slot(object, object, list, dict, float)
+    def _on_frame_processed(
         self,
-        res: Optional[KArSLResult],
         annotated_frame: np.ndarray,
+        karsl_res: Optional[KArSLResult],
+        yolo_detections: list[DetectedObject],
         vis_info: dict,
         elapsed_ms: float,
     ) -> None:
-        if self._active_engine != "karsl":
-            return
+        """Handle annotated frame and inference results emitted by the background worker."""
+        mode = self._ai_mode_combo.currentData()
 
-        self._state.frame_received.emit(annotated_frame)
+        # Record video frame if recording is active
+        if self._is_recording and self._video_writer is not None:
+            bgr = cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR)
+            self._video_writer.write(bgr)
+
+        # Draw recording watermark badge if active
+        if self._is_recording and self._rec_indicator_visible:
+            cv2.circle(annotated_frame, (28, 28), 8, (255, 50, 50), -1)
+            cv2.putText(
+                annotated_frame, "REC", (42, 34),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 50, 50), 2, cv2.LINE_AA,
+            )
+
+        self._last_display_frame = annotated_frame
+        self._preview.display_frame(annotated_frame)
         self._latency_card.set_value(f"{elapsed_ms:.0f} ms")
 
-        # Multimodal and Hand presence metrics
-        hands_cnt = 0
-        if vis_info.get("rh"):
-            hands_cnt += 1
-        if vis_info.get("lh"):
-            hands_cnt += 1
+        # ── 1. Sign Language Handling ──
+        if mode in ("sign", "combined"):
+            hands_cnt = 0
+            if vis_info.get("rh"):
+                hands_cnt += 1
+            if vis_info.get("lh"):
+                hands_cnt += 1
 
-        has_pose = vis_info.get("has_pose", False)
-        has_face = vis_info.get("has_face", False)
+            if karsl_res is not None and karsl_res.pred_idx >= 0:
+                conf = karsl_res.confidence
+                ar = karsl_res.arabic_text
+                en = karsl_res.english_text
 
-        if hands_cnt > 0:
-            self._detections_card.set_value(f"{hands_cnt} hand(s)")
-        elif has_pose:
-            self._detections_card.set_value("Pose detected")
-        elif has_face:
-            self._detections_card.set_value("Face detected")
-        else:
-            self._detections_card.set_value("0")
+                if karsl_res.is_new:
+                    from src.domain.text import TextCommand
+                    self._text_builder.process(TextCommand.word(ar))
+                    self._update_caption()
+                    self._detection_count += 1
 
-        if res is not None and res.pred_idx >= 0:
-            conf = res.confidence
-            ar = res.arabic_text
-            en = res.english_text
-            buf = res.buffer_fill
+                    self._caption_label.setText(f"{ar} ({en})")
+                    self._word_label.setText(ar)
+                    self._decision_card.set_value(f"Sign: {ar} ({conf:.0%})")
 
-            if res.is_new:
-                from src.domain.text import TextCommand
-                self._text_builder.process(TextCommand.word(ar))
-                self._update_caption()
-                self._detection_count += 1
+                    if self._analytics:
+                        self._analytics.record_prediction(correct=True, delay_ms=elapsed_ms)
+                        self._analytics.record_system_metrics()
 
-                self._caption_label.setText(f"{ar} ({en})")
-                self._word_label.setText(ar)
-                self._decision_card.set_value(f"KArSL-502 ({conf:.1%})")
-
-                if self._analytics:
-                    self._analytics.record_prediction(correct=True, delay_ms=elapsed_ms)
-                    self._analytics.record_system_metrics()
-
-                item = QListWidgetItem(f"  [KArSL-502] {ar} ({en}) ({conf:.1%})")
-                self._history_list.insertItem(0, item)
-                self._detections_card.set_value(str(self._detection_count))
-            else:
-                if conf >= 0.20:
-                    self._decision_card.set_value(f"eval ({conf:.1%})")
-                    self._caption_label.setText(f"[{ar} ({en}) — {conf:.1%}]")
+                    item = QListWidgetItem(f"🤟  [Sign] {ar} ({en}) — {conf:.1%}")
+                    self._history_list.insertItem(0, item)
                 else:
-                    self._decision_card.set_value(f"buffer ({buf}/50)")
-                    if not self._word_label.text():
-                        self._caption_label.setText(f"[تجميع الإطارات {buf}/50]")
-        else:
-            buf = res.buffer_fill if res else 0
-            if hands_cnt > 0 or has_pose:
-                self._decision_card.set_value(f"buffer ({buf}/50)")
-                if not self._word_label.text():
-                    self._caption_label.setText(f"[تجميع الحركات {buf}/50]")
+                    if conf >= 0.20:
+                        self._caption_label.setText(f"[{ar} ({en}) — {conf:.0%}]")
             else:
-                self._decision_card.set_value("no hand")
-                if not self._word_label.text():
-                    self._caption_label.setText("No hand detected. Please hold your hand in front of the camera.")
+                buf = karsl_res.buffer_fill if karsl_res else 0
+                if hands_cnt > 0 or vis_info.get("has_pose"):
+                    self._decision_card.set_value(f"Buffering ({buf}/50)")
+                    if not self._word_label.text():
+                        self._caption_label.setText(f"[تجميع حركات اليدين {buf}/50]")
+                else:
+                    self._decision_card.set_value("No Hand")
 
-    def _on_dialect_selected(self, dialect_id: str) -> None:
-        if self._dialect_manager:
-            try:
-                did = DialectId(dialect_id)
-                if self._dialect_manager.switch_dialect(did):
-                    self._state.log("info", f"Dialect switched to: {dialect_id}")
-                    if self._active_engine != "karsl":
-                        self._decision_card.set_value(did.value)
-                    for d in getattr(self._state, "dialects", []):
-                        if getattr(d, "dialect_id", "") == dialect_id:
-                            self._state.active_dialect = d
-                            break
-            except ValueError:
-                pass
+        # ── 2. Object Detection Handling ──
+        if mode in ("yolo", "combined"):
+            obj_cnt = len(yolo_detections)
+            if mode == "yolo":
+                self._detections_card.set_value(f"{obj_cnt} object(s)")
+                if obj_cnt > 0:
+                    top_obj = max(yolo_detections, key=lambda o: o.confidence)
+                    self._caption_label.setText(f"Detected: {top_obj.label} ({top_obj.confidence:.0%})")
+                    self._decision_card.set_value(f"YOLO: {top_obj.label}")
+
+                    # Add unique detected objects to history if not recent
+                    for det in yolo_detections[:3]:
+                        if det.confidence >= 0.50:
+                            item = QListWidgetItem(f"📦  [Object] {det.label} ({det.confidence:.0%})")
+                            # Avoid flooding history
+                            if self._history_list.count() == 0 or self._history_list.item(0).text() != item.text():
+                                self._history_list.insertItem(0, item)
+                else:
+                    self._caption_label.setText("No objects detected above threshold.")
+                    self._decision_card.set_value("YOLO: Scanning...")
+            else:
+                # Combined mode
+                if obj_cnt > 0:
+                    self._detections_card.set_value(f"Objects: {obj_cnt}")
+
+        if mode == "sign":
+            self._detections_card.set_value(str(self._detection_count))
+
+    # ── Controls, Toggles & Settings ─────────────────────────────────────
+
+    def _on_ai_mode_changed(self, index: int) -> None:
+        mode = self._ai_mode_combo.currentData()
+        self._worker.mode = mode
+
+        is_sign = mode in ("sign", "combined")
+        self._engine_label.setVisible(is_sign)
+        self._engine_selector.setVisible(is_sign)
+        self._vocab_btn.setVisible(is_sign and self._engine_selector.currentData() == "karsl")
+
+        self._state.log("info", f"Switched AI Recognition Mode to: {mode}")
+
+    def _on_engine_changed(self, index: int) -> None:
+        engine = self._engine_selector.currentData()
+        self._worker.active_engine = engine
+        self._vocab_btn.setVisible(engine == "karsl")
+
+    def _on_mirror_toggled(self, checked: bool) -> None:
+        self._worker.mirror = checked
+
+    def _on_landmarks_toggled(self, checked: bool) -> None:
+        self._worker.show_landmarks = checked
+
+    def _on_boxes_toggled(self, checked: bool) -> None:
+        self._worker.show_boxes = checked
+
+    def _on_conf_changed(self, value: int) -> None:
+        thresh = value / 100.0
+        self._conf_label.setText(f"{value}%")
+        self._worker.confidence_threshold = thresh
+
+    def _on_resolution_changed(self, index: int) -> None:
+        w, h = self._resolution_combo.currentData()
+        self._source_use_cases.set_resolution(w, h)
+        self._state.log("info", f"Target camera resolution requested: {w}x{h}")
+
+    def _take_screenshot(self) -> None:
+        """Capture and save the current live frame."""
+        if self._last_display_frame is None:
+            QMessageBox.information(self, "Screenshot", "No live frame available to capture.")
+            return
+
+        captures_dir = Path("data/captures")
+        captures_dir.mkdir(parents=True, exist_ok=True)
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        filepath = captures_dir / f"screenshot_{ts}.png"
+
+        bgr = cv2.cvtColor(self._last_display_frame, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(str(filepath), bgr)
+
+        self._state.log("info", f"Screenshot saved to: {filepath}")
+        QMessageBox.information(self, "Screenshot Saved", f"Saved successfully to:\n{filepath.resolve()}")
+
+    def _toggle_recording(self) -> None:
+        """Start or stop recording live frames to MP4."""
+        if not self._is_recording:
+            if self._last_display_frame is None:
+                QMessageBox.warning(self, "Recording", "Cannot start recording: No camera stream active.")
+                return
+
+            captures_dir = Path("data/captures")
+            captures_dir.mkdir(parents=True, exist_ok=True)
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            filepath = captures_dir / f"recording_{ts}.mp4"
+
+            h, w = self._last_display_frame.shape[:2]
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            self._video_writer = cv2.VideoWriter(str(filepath), fourcc, 25.0, (w, h))
+
+            if not self._video_writer.isOpened():
+                QMessageBox.critical(self, "Recording Error", "Failed to initialize MP4 video encoder.")
+                return
+
+            self._is_recording = True
+            self._record_btn.setText("⏹ Stop Recording")
+            self._record_btn.setStyleSheet("background-color: #c94f4f; font-weight: 700;")
+            self._record_timer.start(500)
+            self._state.log("info", f"Started recording to: {filepath}")
+        else:
+            self._is_recording = False
+            self._record_timer.stop()
+            if self._video_writer is not None:
+                self._video_writer.release()
+                self._video_writer = None
+
+            self._record_btn.setText("🔴 Record Video")
+            self._record_btn.setStyleSheet("")
+            self._state.log("info", "Video recording stopped and saved.")
+            QMessageBox.information(self, "Recording Saved", "Video recording completed and saved to data/captures/.")
+
+    def _blink_rec_indicator(self) -> None:
+        self._rec_indicator_visible = not self._rec_indicator_visible
+
+    # ── Text Builder Helpers ─────────────────────────────────────────────
 
     def _clear_text(self) -> None:
         if self._text_builder:
@@ -572,144 +1082,45 @@ class RecognitionTab(QWidget):
             self._state.last_caption = self._text_builder.full_text
             self._word_label.setText(self._text_builder.current_word)
 
-    def _start_recognition(self) -> None:
-        if self._source_type == VideoSourceType.FILE:
-            uri = self._file_selector.path
-            if not uri:
-                self._state.error("Please select a video file first")
-                return
-        elif self._source_type == VideoSourceType.WEBCAM:
-            uri = "webcam:0"
-        elif self._source_type == VideoSourceType.SCREEN:
-            uri = "screen:0"
-        elif self._source_type == VideoSourceType.WINDOW:
-            uri = "window:ArSL"
-        else:
-            uri = "webcam:0"
+    def _on_dialect_selected(self, dialect_id: str) -> None:
+        if self._dialect_manager:
+            try:
+                did = DialectId(dialect_id)
+                if self._dialect_manager.switch_dialect(did):
+                    self._state.log("info", f"Dialect switched to: {dialect_id}")
+            except ValueError:
+                pass
 
-        if self._karsl_worker:
-            self._karsl_worker.reset_buffer()
+    def _show_karsl_vocab(self) -> None:
+        vocab = []
+        if self._worker and self._worker.karsl_recognizer:
+            vocab = self._worker.karsl_recognizer.get_vocabulary()
+        dlg = KArSLVocabularyDialog(vocabulary=vocab if vocab else None, parent=self)
+        dlg.exec()
 
-        success = self._source_use_cases.start_source(self._source_type, uri)
+    # ── Worker Callbacks ─────────────────────────────────────────────────
+
+    def _on_karsl_loaded(self, success: bool, msg: str) -> None:
         if success:
-            self._start_btn.setEnabled(False)
-            self._stop_btn.setEnabled(True)
-            self._timer.start(33)  # ~30 FPS
-
-    def _stop_recognition(self) -> None:
-        self._timer.stop()
-        self._source_use_cases.stop_source()
-        if self._karsl_worker:
-            self._karsl_worker.reset_buffer()
-        self._start_btn.setEnabled(True)
-        self._stop_btn.setEnabled(False)
-
-    def _process_frame(self) -> None:
-        if self._analytics:
-            self._analytics.record_frame()
-
-        frame_result = self._source_use_cases.read_frame()
-
-        if frame_result is None or frame_result.data is None:
-            return
-
-        frame = frame_result.data
-        start_time = time.perf_counter()
-
-        # Frame skipping
-        if self._optimizer and not self._optimizer.should_process_frame():
-            self._state.frame_received.emit(frame)
-            return
-
-        # Resize for performance if requested by profile
-        if self._optimizer:
-            frame, _ = self._optimizer.resize_frame(frame)
-
-        # Route according to active engine
-        if self._active_engine == "karsl" and self._karsl_worker is not None:
-            submitted = self._karsl_worker.submit_frame(frame)
-            if not submitted:
-                self._state.frame_received.emit(frame)
-            return
-
-        # ─── Custom Sign Classifier Route ───
-        try:
-            detection_result = self._detector.detect(frame)
-        except Exception as e:
-            self._decision_card.set_value("detector error")
-            self._state.error(f"Hand detection error: {e}")
-            self._state.frame_received.emit(frame)
-            return
-
-        # Render landmarks and skeleton on frame
-        annotated_frame = self._renderer.draw(frame, detection_result)
-        self._state.frame_received.emit(annotated_frame)
-
-        elapsed = (time.perf_counter() - start_time) * 1000.0
-        self._latency_card.set_value(f"{elapsed:.0f} ms")
-
-        # Hand processing
-        if detection_result.has_hands:
-            hand = detection_result.hands[0]
-            self._detections_card.set_value(f"{len(detection_result.hands)} hand(s)")
-
-            p = self._pipeline
-            has_loaded_models = (
-                (p._word_recognizer is not None and getattr(p._word_recognizer, 'is_loaded', False))
-                or (p._static_recognizer is not None and getattr(p._static_recognizer, 'is_loaded', False))
-                or (p._dynamic_recognizer is not None and getattr(p._dynamic_recognizer, 'is_loaded', False))
-            )
-
-            track = None
-            hybrid_result, text_cmd = self._pipeline.process_to_command(hand=hand, track=track)
-
-            if hybrid_result.is_valid and text_cmd is not None:
-                self._text_builder.process(text_cmd)
-                self._update_caption()
-                self._detection_count += 1
-
-                conf = hybrid_result.final_result.confidence
-                self._decision_card.set_value(f"{hybrid_result.decision_path} ({conf:.1%})")
-                self._caption_label.setText(hybrid_result.arabic_text)
-                self._word_label.setText(hybrid_result.arabic_text)
-
-                if self._analytics:
-                    self._analytics.record_prediction(correct=True, delay_ms=elapsed)
-                    self._analytics.record_system_metrics()
-
-                item = QListWidgetItem(
-                    f"  [{hybrid_result.decision_path}] "
-                    f"{hybrid_result.arabic_text} "
-                    f"({conf:.1%})"
-                )
-                self._history_list.insertItem(0, item)
-                self._detections_card.set_value(str(self._detection_count))
-            else:
-                if not has_loaded_models:
-                    self._decision_card.set_value(f"hand ({hand.handedness.value}) - untrained")
-                    self._caption_label.setText(f"[يد مكتشفة ({hand.handedness.value}) — لا يوجد نموذج مدرّب]")
-                else:
-                    conf = hybrid_result.final_result.confidence if hybrid_result.final_result else 0.0
-                    pred_ar = hybrid_result.final_result.arabic_text if hybrid_result.final_result else ""
-                    self._decision_card.set_value(f"rejected ({conf:.1%})")
-                    if pred_ar:
-                        self._caption_label.setText(f"[توقع غير مؤكد: {pred_ar} ({conf:.1%})]")
-                    else:
-                        self._caption_label.setText(f"[إشارة غير مؤكدة: {conf:.1%}]")
+            self._state.log("info", f"KArSL-502: {msg}")
         else:
-            self._decision_card.set_value("no hand")
-            self._detections_card.set_value("0")
+            self._state.log("warning", f"KArSL-502: {msg}")
 
-    def _on_gesture_detected(self, gesture_id: str, confidence: float) -> None:
-        item = QListWidgetItem(f"  [{gesture_id}]  confidence: {confidence:.2%}")
-        self._history_list.insertItem(0, item)
-        self._detections_card.set_value(str(self._history_list.count()))
+    def _on_yolo_loaded(self, success: bool, msg: str) -> None:
+        if success:
+            self._state.log("info", f"YOLO: {msg}")
+        else:
+            self._state.log("warning", f"YOLO: {msg}")
+
+    def _on_worker_error(self, err: str) -> None:
+        self._state.log("warning", f"Vision worker error: {err}")
 
     def _on_status_changed(self, status: str) -> None:
         if status == "error":
-            self._stop_recognition()
+            self._disconnect_camera()
 
     def closeEvent(self, event) -> None:
-        if self._karsl_worker:
-            self._karsl_worker.stop()
+        self._disconnect_camera()
+        if self._worker:
+            self._worker.stop()
         super().closeEvent(event)
