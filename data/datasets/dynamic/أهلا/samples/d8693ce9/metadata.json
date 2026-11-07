@@ -1,0 +1,17 @@
+{
+  "sample_id": "d8693ce9",
+  "gesture_type": "dynamic_gesture",
+  "gesture_label": "أهلا",
+  "dialect": "iraqi",
+  "timestamp": 1794063525.7300737,
+  "num_frames": 68,
+  "num_hands": 1,
+  "handedness": "Right",
+  "duration_seconds": 4.43950629234314,
+  "fps": 15.317018497592914,
+  "has_motion": true,
+  "total_distance": 0.0,
+  "motion_energy": 0.0,
+  "schema_version": "v1_single_hand",
+  "modality_mode": "one_hand"
+}

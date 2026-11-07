@@ -1,0 +1,17 @@
+{
+  "sample_id": "169eae48",
+  "gesture_type": "dynamic_gesture",
+  "gesture_label": "لدي سؤال",
+  "dialect": "iraqi",
+  "timestamp": 1794063351.242228,
+  "num_frames": 81,
+  "num_hands": 2,
+  "handedness": "Both",
+  "duration_seconds": 4.979609966278076,
+  "fps": 16.266334220658262,
+  "has_motion": true,
+  "total_distance": 0.0,
+  "motion_energy": 0.0,
+  "schema_version": "v2_multimodal",
+  "modality_mode": "two_hands_face"
+}

@@ -30,9 +30,9 @@ from src.infrastructure.dataset.gesture_registry import GestureRegistry
 from src.infrastructure.dialect_manager import DialectManager
 from src.infrastructure.recognition.hybrid_pipeline import HybridRecognitionPipeline
 from src.models.train_dynamic import inspect_dynamic_dataset, train_dynamic_model
-from src.models.train_static import inspect_dataset, train_static_model
 from src.models.train_multimodal import inspect_multimodal_dataset, train_multimodal_model
-from src.presentation.widgets import SectionHeader, StatCard
+from src.models.train_static import inspect_dataset, train_static_model
+from src.presentation.widgets import StatCard
 
 
 class TrainingWorker(QThread):
@@ -141,7 +141,9 @@ class TrainingWorker(QThread):
 
 
 class ModelTrainingTab(QWidget):
-    """Tab for training, validating, and exporting gesture recognition models."""
+    """Clean, student-friendly 'Train Model' tab for training and validating sign recognition models."""
+
+    navigate_to_recognition = Signal()
 
     def __init__(
         self,
@@ -162,7 +164,6 @@ class ModelTrainingTab(QWidget):
         self._connect_signals()
         self._sync_active_dialect()
         self.refresh_model_sync_status()
-        self._sync_active_dialect()
 
     def _sync_active_dialect(self) -> None:
         if hasattr(self._state, "active_dialect") and self._state.active_dialect:
@@ -177,30 +178,182 @@ class ModelTrainingTab(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 16, 24, 16)
-        layout.setSpacing(16)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(14)
 
-        header = SectionHeader(
-            "Model Training",
-            "Train, validate, and export gesture recognition models — real-time progress",
-        )
-        layout.addWidget(header)
+        # ── Header Banner ────────────────────────────────────────────────
+        header_banner = QFrame()
+        header_banner.setObjectName("trainHeaderBanner")
+        header_banner.setStyleSheet("""
+            QFrame#trainHeaderBanner {
+                background-color: #151a21;
+                border: 1px solid #2B3442;
+                border-radius: 8px;
+                padding: 10px 14px;
+            }
+        """)
+        h_layout = QHBoxLayout(header_banner)
+        h_layout.setContentsMargins(10, 4, 10, 4)
 
-        # Training configuration
-        config_section = QFrame()
-        config_section.setObjectName("configSection")
-        config_section.setStyleSheet("""
-            QFrame#configSection {
-                background-color: #181d24;
-                border: 1px solid #2b3441;
+        header_text_box = QVBoxLayout()
+        header_text_box.setSpacing(2)
+        title_lbl = QLabel("Model Training Studio")
+        title_lbl.setStyleSheet("font-size: 16px; font-weight: 700; color: #F3F4F6;")
+        header_text_box.addWidget(title_lbl)
+
+        sub_lbl = QLabel("Train neural networks from your recorded sign gestures with genuine validation metrics")
+        sub_lbl.setStyleSheet("font-size: 12px; color: #94A3B8;")
+        header_text_box.addWidget(sub_lbl)
+        h_layout.addLayout(header_text_box)
+
+        h_layout.addStretch()
+
+        self._sync_status_badge = QLabel("Checkpoint: Checking...")
+        self._sync_status_badge.setStyleSheet("""
+            background-color: #101419;
+            color: #94A3B8;
+            border: 1px solid #2B3442;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+        """)
+        h_layout.addWidget(self._sync_status_badge)
+
+        self._export_btn = QPushButton("Export Model Files")
+        self._export_btn.setToolTip("Export trained checkpoints and vocabulary manifest for deployment")
+        h_layout.addWidget(self._export_btn)
+
+        layout.addWidget(header_banner)
+
+        # ── 3 Summary Overview Cards ─────────────────────────────────────
+        overview_box = QHBoxLayout()
+        overview_box.setSpacing(10)
+
+        self._trainable_signs_card = StatCard("Trainable Signs", "Checking...")
+        overview_box.addWidget(self._trainable_signs_card)
+
+        self._valid_samples_card = StatCard("Multimodal Samples", "Checking...")
+        overview_box.addWidget(self._valid_samples_card)
+
+        self._readiness_card = StatCard("Training Readiness", "Ready to Train")
+        overview_box.addWidget(self._readiness_card)
+
+        layout.addLayout(overview_box)
+
+        # ── Main Training Action Card ────────────────────────────────────
+        main_train_card = QFrame()
+        main_train_card.setObjectName("mainTrainCard")
+        main_train_card.setStyleSheet("""
+            QFrame#mainTrainCard {
+                background-color: #151a21;
+                border: 1px solid #2B3442;
                 border-radius: 8px;
                 padding: 16px;
             }
         """)
-        config_layout = QHBoxLayout(config_section)
+        train_vlayout = QVBoxLayout(main_train_card)
+        train_vlayout.setContentsMargins(14, 14, 14, 14)
+        train_vlayout.setSpacing(12)
 
-        # Model type group
-        model_group = QGroupBox("Model Architecture && Target")
+        # Prominent Action Buttons Bar
+        action_bar = QHBoxLayout()
+        action_bar.setSpacing(10)
+
+        self._train_btn = QPushButton("🚀  Start Training Model")
+        self._train_btn.setObjectName("actionButton")
+        self._train_btn.setMinimumHeight(44)
+        self._train_btn.setMinimumWidth(220)
+        action_bar.addWidget(self._train_btn)
+
+        self._stop_btn = QPushButton("⏹  Stop Training")
+        self._stop_btn.setObjectName("dangerButton")
+        self._stop_btn.setEnabled(False)
+        self._stop_btn.setMinimumHeight(44)
+        action_bar.addWidget(self._stop_btn)
+
+        action_bar.addStretch()
+
+        self._test_in_recog_btn = QPushButton("🎯  Test Model in Recognition →")
+        self._test_in_recog_btn.setObjectName("successButton")
+        self._test_in_recog_btn.setMinimumHeight(44)
+        self._test_in_recog_btn.setVisible(False)
+        self._test_in_recog_btn.clicked.connect(self._on_test_in_recog_clicked)
+        action_bar.addWidget(self._test_in_recog_btn)
+
+        train_vlayout.addLayout(action_bar)
+
+        # Progress bar & epoch label
+        progress_layout = QHBoxLayout()
+        progress_layout.addWidget(QLabel("Training Progress:"))
+
+        self._epoch_progress = QProgressBar()
+        self._epoch_progress.setRange(0, 40)
+        self._epoch_progress.setValue(0)
+        self._epoch_progress.setFixedHeight(10)
+        progress_layout.addWidget(self._epoch_progress, stretch=1)
+
+        self._epoch_label = QLabel("0 / 40")
+        self._epoch_label.setMinimumWidth(80)
+        self._epoch_label.setAlignment(Qt.AlignRight)
+        progress_layout.addWidget(self._epoch_label)
+        train_vlayout.addLayout(progress_layout)
+
+        # Metrics stat cards
+        metrics_layout = QHBoxLayout()
+        metrics_layout.setSpacing(8)
+        self._loss_card = StatCard("Training Loss", "--")
+        metrics_layout.addWidget(self._loss_card)
+        self._val_loss_card = StatCard("Validation Loss", "--")
+        metrics_layout.addWidget(self._val_loss_card)
+        self._accuracy_card = StatCard("Validation Accuracy", "--")
+        metrics_layout.addWidget(self._accuracy_card)
+        self._time_card = StatCard("Elapsed Time", "--")
+        metrics_layout.addWidget(self._time_card)
+        train_vlayout.addLayout(metrics_layout)
+
+        # Dataset inspection report label
+        self._dataset_info_label = QLabel("Dataset status: Ready to train.")
+        self._dataset_info_label.setStyleSheet("color: #94A3B8; font-size: 13px; padding-top: 4px; line-height: 1.4;")
+        self._dataset_info_label.setWordWrap(True)
+        train_vlayout.addWidget(self._dataset_info_label)
+
+        layout.addWidget(main_train_card)
+
+        # ── Collapsible Advanced Hyperparameters Section ─────────────────
+        self._adv_toggle_btn = QPushButton("▸ Show Advanced Hyperparameters & Architecture")
+        self._adv_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #3B82F6;
+                text-align: left;
+                font-size: 13px;
+                font-weight: 600;
+                padding: 4px 0;
+            }
+            QPushButton:hover {
+                color: #60A5FA;
+            }
+        """)
+        self._adv_toggle_btn.clicked.connect(self._toggle_advanced)
+        layout.addWidget(self._adv_toggle_btn)
+
+        self._adv_container = QFrame()
+        self._adv_container.setVisible(False)
+        self._adv_container.setStyleSheet("""
+            QFrame {
+                background-color: #151a21;
+                border: 1px solid #2B3442;
+                border-radius: 8px;
+                padding: 12px;
+            }
+        """)
+        adv_outer = QHBoxLayout(self._adv_container)
+        adv_outer.setSpacing(14)
+
+        # Model Architecture Group
+        model_group = QGroupBox("Architecture & Dialect")
         model_form = QFormLayout(model_group)
 
         self._model_type = QComboBox()
@@ -217,9 +370,9 @@ class ModelTrainingTab(QWidget):
         self._dialect_combo.setCurrentIndex(0)
         model_form.addRow("Target Dialect:", self._dialect_combo)
 
-        config_layout.addWidget(model_group)
+        adv_outer.addWidget(model_group)
 
-        # Hyperparameters group
+        # Hyperparameters Group
         hyper_group = QGroupBox("Hyperparameters")
         hyper_form = QFormLayout(hyper_group)
 
@@ -246,111 +399,38 @@ class ModelTrainingTab(QWidget):
         self._val_split.setSuffix(" %")
         hyper_form.addRow("Validation Split:", self._val_split)
 
-        config_layout.addWidget(hyper_group)
+        adv_outer.addWidget(hyper_group)
 
-        # Augmentation group
+        # Augmentation Group
         aug_group = QGroupBox("Data Augmentation")
-        aug_form = QVBoxLayout(aug_group)
+        aug_layout = QVBoxLayout(aug_group)
 
         self._aug_rotate = QCheckBox("Rotation (±15°)")
         self._aug_rotate.setChecked(True)
-        aug_form.addWidget(self._aug_rotate)
+        aug_layout.addWidget(self._aug_rotate)
 
         self._aug_scale = QCheckBox("Scale (±10%)")
         self._aug_scale.setChecked(True)
-        aug_form.addWidget(self._aug_scale)
+        aug_layout.addWidget(self._aug_scale)
 
         self._aug_flip = QCheckBox("Horizontal Flip")
         self._aug_flip.setChecked(False)
-        aug_form.addWidget(self._aug_flip)
+        aug_layout.addWidget(self._aug_flip)
 
         self._aug_jitter = QCheckBox("Landmark Jitter")
         self._aug_jitter.setChecked(True)
-        aug_form.addWidget(self._aug_jitter)
+        aug_layout.addWidget(self._aug_jitter)
 
-        aug_form.addStretch()
-        config_layout.addWidget(aug_group)
+        aug_layout.addStretch()
+        adv_outer.addWidget(aug_group)
 
-        layout.addWidget(config_section)
+        layout.addWidget(self._adv_container)
+        layout.addStretch()
 
-        # Training controls + progress
-        train_section = QFrame()
-        train_section.setObjectName("trainSection")
-        train_section.setStyleSheet("""
-            QFrame#trainSection {
-                background-color: #181d24;
-                border: 1px solid #2b3441;
-                border-radius: 8px;
-                padding: 16px;
-            }
-        """)
-        train_layout = QVBoxLayout(train_section)
-
-        # Buttons
-        btn_row = QHBoxLayout()
-
-        self._train_btn = QPushButton("Start Training")
-        self._train_btn.setObjectName("primaryButton")
-        btn_row.addWidget(self._train_btn)
-
-        self._stop_btn = QPushButton("Stop Training")
-        self._stop_btn.setEnabled(False)
-        btn_row.addWidget(self._stop_btn)
-
-        self._export_btn = QPushButton("Export ONNX Model")
-        btn_row.addWidget(self._export_btn)
-
-        self._sync_status_badge = QLabel("Checkpoint: Checking...")
-        self._sync_status_badge.setStyleSheet("""
-            background-color: #111827;
-            color: #94a3b8;
-            border: 1px solid #1f2937;
-            border-radius: 4px;
-            padding: 4px 10px;
-            font-size: 11px;
-            font-weight: 600;
-        """)
-        btn_row.addWidget(self._sync_status_badge)
-
-        btn_row.addStretch()
-        train_layout.addLayout(btn_row)
-
-        # Progress bar & epoch label
-        progress_layout = QHBoxLayout()
-        progress_layout.addWidget(QLabel("Epoch Progress:"))
-
-        self._epoch_progress = QProgressBar()
-        self._epoch_progress.setRange(0, self._epochs_spin.value())
-        self._epoch_progress.setValue(0)
-        progress_layout.addWidget(self._epoch_progress, stretch=1)
-
-        self._epoch_label = QLabel(f"0 / {self._epochs_spin.value()}")
-        self._epoch_label.setMinimumWidth(80)
-        self._epoch_label.setAlignment(Qt.AlignRight)
-        progress_layout.addWidget(self._epoch_label)
-
-        train_layout.addLayout(progress_layout)
-
-        # Metrics stat cards
-        metrics_layout = QHBoxLayout()
-        self._loss_card = StatCard("Training Loss", "--")
-        metrics_layout.addWidget(self._loss_card)
-        self._val_loss_card = StatCard("Validation Loss", "--")
-        metrics_layout.addWidget(self._val_loss_card)
-        self._accuracy_card = StatCard("Accuracy", "--")
-        metrics_layout.addWidget(self._accuracy_card)
-        self._time_card = StatCard("Elapsed Time", "--")
-        metrics_layout.addWidget(self._time_card)
-        train_layout.addLayout(metrics_layout)
-
-        # Dataset inspection report label
-        self._dataset_info_label = QLabel("Dataset status: Ready to inspect.")
-        self._dataset_info_label.setStyleSheet("color: #9cdcfe; font-size: 13px; padding-top: 8px; line-height: 1.4;")
-        self._dataset_info_label.setWordWrap(True)
-        train_layout.addWidget(self._dataset_info_label)
-
-        train_layout.addStretch()
-        layout.addWidget(train_section, stretch=1)
+    def _toggle_advanced(self) -> None:
+        vis = not self._adv_container.isVisible()
+        self._adv_container.setVisible(vis)
+        self._adv_toggle_btn.setText("▾ Hide Advanced Hyperparameters & Architecture" if vis else "▸ Show Advanced Hyperparameters & Architecture")
 
     def _connect_signals(self) -> None:
         self._train_btn.clicked.connect(self._inspect_and_train)
@@ -362,67 +442,60 @@ class ModelTrainingTab(QWidget):
         if hasattr(self._state, "active_dialect_changed"):
             self._state.active_dialect_changed.connect(lambda _: self._sync_active_dialect())
 
+    def _on_test_in_recog_clicked(self) -> None:
+        self.navigate_to_recognition.emit()
+
     def refresh_model_sync_status(self) -> None:
-        """Verify whether the active dataset classes match the trained model checkpoint."""
+        """Verify whether the active dataset classes match the trained model checkpoint and update summary cards."""
         if not hasattr(self, "_sync_status_badge"):
             return
         try:
             active_registry = {c.name.replace(" ", "_") for c in self._registry.list_active_classes()}
+            dataset_base = Path("data/datasets/words")
+            inspection = inspect_multimodal_dataset(dataset_base, allowed_classes=active_registry)
 
-            # Handle Multimodal Model Sync Status
-            if "multimodal" in self._model_type.currentText().lower():
-                classes_path = Path("data/models/multimodal/classes.json")
-                if not classes_path.exists():
-                    self._sync_status_badge.setText("⚠️ Multimodal Not Trained")
-                    self._sync_status_badge.setStyleSheet(
-                        "background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
-                    )
-                    return
-                with open(classes_path, "r", encoding="utf-8") as f:
-                    trained_classes = set(json.load(f))
-                inspection = inspect_multimodal_dataset("data/datasets/words", allowed_classes=active_registry)
-                qualifying = set(inspection["accepted_classes"].keys())
-                if trained_classes == qualifying:
-                    self._sync_status_badge.setText(f"✅ Multimodal Synchronized ({len(trained_classes)} classes)")
-                    self._sync_status_badge.setStyleSheet(
-                        "background-color: #062b1a; color: #10b981; border: 1px solid #065f46; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
-                    )
-                else:
-                    self._sync_status_badge.setText(
-                        f"⚠️ Retraining Recommended ({len(qualifying)} active vs {len(trained_classes)} in checkpoint)"
-                    )
-                    self._sync_status_badge.setStyleSheet(
-                        "background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
-                    )
-                return
+            # Update 3 Summary Overview Cards
+            trainable_count = len(inspection.get("accepted_classes", {}))
+            multimodal_samples_count = sum(inspection.get("accepted_classes", {}).values())
 
-            target_dialect = self._dialect_combo.currentText().lower()
-            classes_path = Path(f"data/models/{target_dialect}/classes.json")
+            self._trainable_signs_card.set_value(f"{trainable_count} Signs")
+            self._valid_samples_card.set_value(f"{multimodal_samples_count} Samples")
+
+            if trainable_count >= 2:
+                self._readiness_card.set_value("Ready to Train")
+            else:
+                self._readiness_card.set_value(f"Need ≥2 signs ({trainable_count} ready)")
+
+            # Checkpoint synchronization badge
+            classes_path = Path("data/models/multimodal/classes.json")
             if not classes_path.exists():
-                self._sync_status_badge.setText("⚠️ Model Not Trained Yet")
+                classes_path = Path("data/models/iraqi/classes.json")
+
+            if not classes_path.exists():
+                self._sync_status_badge.setText("⚠️ Not Trained Yet")
                 self._sync_status_badge.setStyleSheet(
-                    "background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
+                    "background-color: #451a03; color: #F59E0B; border: 1px solid #78350f; "
+                    "border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600;"
                 )
                 return
 
             with open(classes_path, "r", encoding="utf-8") as f:
                 trained_classes = set(json.load(f))
-
-            dataset_base = Path("data/datasets/words")
-            inspection = inspect_dataset(dataset_base, allowed_classes=active_registry)
             qualifying = set(inspection["accepted_classes"].keys())
 
-            if trained_classes == qualifying:
-                self._sync_status_badge.setText(f"✅ Checkpoint Synchronized ({len(trained_classes)} classes)")
+            if trained_classes == qualifying and qualifying:
+                self._sync_status_badge.setText(f"✅ Synchronized ({len(trained_classes)} signs)")
                 self._sync_status_badge.setStyleSheet(
-                    "background-color: #062b1a; color: #10b981; border: 1px solid #065f46; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
+                    "background-color: #064e3b; color: #10B981; border: 1px solid #047857; "
+                    "border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600;"
                 )
             else:
                 self._sync_status_badge.setText(
                     f"⚠️ Retraining Recommended ({len(qualifying)} active vs {len(trained_classes)} in checkpoint)"
                 )
                 self._sync_status_badge.setStyleSheet(
-                    "background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
+                    "background-color: #451a03; color: #F59E0B; border: 1px solid #78350f; "
+                    "border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600;"
                 )
         except Exception as e:
             self._logger.debug(f"Sync check note: {e}")
@@ -430,7 +503,10 @@ class ModelTrainingTab(QWidget):
     def _export_model(self) -> None:
         """Export trained model checkpoint and vocabulary manifest for deployment."""
         target_dialect = self._dialect_combo.currentText().lower()
-        model_dir = Path(f"data/models/{target_dialect}")
+        model_dir = Path("data/models/multimodal")
+        if not model_dir.exists():
+            model_dir = Path(f"data/models/{target_dialect}")
+
         export_dir = Path("data/models/exported")
         export_dir.mkdir(parents=True, exist_ok=True)
 
@@ -445,15 +521,15 @@ class ModelTrainingTab(QWidget):
         if copied:
             QMessageBox.information(
                 self,
-                "تم تصدير النموذج",
-                f"تم تصدير ملفات النموذج بنجاح إلى:\n{export_dir.resolve()}\n\nالملفات المصدرة:\n"
+                "Model Exported",
+                f"Model files exported successfully to:\n{export_dir.resolve()}\n\nFiles:\n"
                 + "\n".join(f"  • {name}" for name in copied),
             )
         else:
             QMessageBox.warning(
                 self,
-                "لا توجد نماذج للتصدير",
-                f"لم يتم العثور على أي نماذج مدربة في:\n{model_dir}\nيرجى تدريب النموذج أولاً.",
+                "No Model to Export",
+                f"No trained models found in:\n{model_dir}\nPlease train the model first.",
             )
 
     def _on_epochs_changed(self, value: int) -> None:
@@ -461,81 +537,79 @@ class ModelTrainingTab(QWidget):
         self._epoch_label.setText(f"{self._epoch_progress.value()} / {value}")
 
     def _inspect_and_train(self) -> None:
-        """Inspect dataset classes, display qualifying vs excluded classes, and launch training."""
         is_multimodal = "Multimodal" in self._model_type.currentText()
         is_dynamic = "Dynamic" in self._model_type.currentText()
         target_dialect = self._dialect_combo.currentText().lower()
         dataset_base = Path("data/datasets/dynamic") if is_dynamic else Path("data/datasets/words")
 
         if not dataset_base.exists():
-            QMessageBox.warning(self, "مجلد البيانات غير موجود", f"المجلد المطلوب {dataset_base} غير موجود.")
+            QMessageBox.warning(self, "Directory Missing", f"Directory {dataset_base} not found.")
             return
 
         active_registry = {c.name.replace(" ", "_") for c in self._registry.list_active_classes()}
 
-        # Detailed inspection (multimodal vs dynamic vs static legacy)
         if is_multimodal:
             inspection = inspect_multimodal_dataset(dataset_base, allowed_classes=active_registry)
             report_lines = [
-                f"📊 حالة مجموعة البيانات المتعددة الوسائط ({dataset_base.name} - أيدي + وجه):",
-                f"  • إجمالي الفئات المفحوصة: {inspection['total_classes']}",
+                f"📊 Multimodal Dataset Status ({dataset_base.name} - Hands + Face):",
+                f"  • Total classes inspected: {inspection['total_classes']}",
                 "",
-                "✅ الفئات المستوفية للشروط للتدريب المتعدد الوسائط (عينتان فأكثر):",
+                "✅ Trainable Qualifying Signs (≥2 samples):",
             ]
             if inspection["accepted_classes"]:
                 for cls_name, cnt in sorted(inspection["accepted_classes"].items()):
-                    report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} عينة متعددة الوسائط (مقبولة للتدريب)")
+                    report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} multimodal samples")
             else:
-                report_lines.append("    (لا توجد أي فئة تحوي عينات متعددة الوسائط كافية)")
+                report_lines.append("    (No signs have ≥2 multimodal samples)")
 
             report_lines.append("")
-            report_lines.append("ℹ️ فئات تحوي عينات بصيغة Legacy v1 (أحادية اليد فقط - يلزم تسجيل عينات جديدة بالأيدي والوجه):")
+            report_lines.append("ℹ️ Legacy v1 signs (single-hand only — new multimodal samples needed):")
             for cls_name, cnt in sorted(inspection.get("legacy_only_classes", {}).items()):
-                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} عينة بصيغة Legacy أحادية اليد")
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} legacy single-hand samples")
             for cls_name, cnt in sorted(inspection.get("empty_classes", {}).items()):
-                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: 0 عينات")
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: 0 samples")
 
         elif is_dynamic:
             inspection = inspect_dynamic_dataset(dataset_base, allowed_classes=active_registry)
             report_lines = [
-                f"📊 حالة مجموعة البيانات الديناميكية ({dataset_base.name}):",
-                f"  • إجمالي الفئات المفحوصة: {inspection['total_classes']}",
+                f"📊 Dynamic Dataset Status ({dataset_base.name}):",
+                f"  • Total classes inspected: {inspection['total_classes']}",
                 "",
-                "✅ الفئات المقبولة والمستوفية للشروط (عينتان فأكثر):",
+                "✅ Trainable Qualifying Signs (≥2 sequences):",
             ]
             if inspection["accepted_classes"]:
                 for cls_name, cnt in sorted(inspection["accepted_classes"].items()):
-                    report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} تسلسل حركة (مقبولة للتدريب)")
+                    report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} sequences")
             else:
-                report_lines.append("    (لا توجد أي فئة مستوفية للحد الأدنى)")
+                report_lines.append("    (No signs have ≥2 sequences)")
 
             report_lines.append("")
-            report_lines.append("⚠️ الفئات المستبعدة (فارغة أو غير كافية):")
+            report_lines.append("⚠️ Excluded signs (empty or insufficient):")
             for cls_name, cnt in sorted(inspection["insufficient_classes"].items()):
-                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} تسلسل حركة فقط (مستبعدة)")
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} sequences (need ≥2)")
             for cls_name, cnt in sorted(inspection["empty_classes"].items()):
-                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: 0 تسلسلات")
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: 0 sequences")
 
         else:
             inspection = inspect_dataset(dataset_base, allowed_classes=active_registry)
             report_lines = [
-                f"📊 حالة مجموعة البيانات ({dataset_base.name}):",
-                f"  • إجمالي الفئات المفحوصة: {inspection['total_classes']}",
+                f"📊 Dataset Status ({dataset_base.name}):",
+                f"  • Total classes inspected: {inspection['total_classes']}",
                 "",
-                "✅ الفئات المقبولة والمستوفية للشروط (عينتان فأكثر):",
+                "✅ Trainable Qualifying Signs (≥2 samples):",
             ]
             if inspection["accepted_classes"]:
                 for cls_name, cnt in sorted(inspection["accepted_classes"].items()):
-                    report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} عينة (مقبولة للتدريب)")
+                    report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} samples")
             else:
-                report_lines.append("    (لا توجد أي فئة مستوفية للحد الأدنى)")
+                report_lines.append("    (No signs have ≥2 samples)")
 
             report_lines.append("")
-            report_lines.append("⚠️ الفئات المستبعدة (فارغة أو غير كافية):")
+            report_lines.append("⚠️ Excluded signs (empty or insufficient):")
             for cls_name, cnt in sorted(inspection["insufficient_classes"].items()):
-                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} عينة فقط (مستبعدة — الحد الأدنى عينتان للتقسيم)")
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} sample only (need ≥2)")
             for cls_name, cnt in sorted(inspection["empty_classes"].items()):
-                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: 0 عينات (مستبعدة — لا توجد عينات مسجلة)")
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: 0 samples")
 
         report_text = "\n".join(report_lines)
         self._dataset_info_label.setText(report_text)
@@ -544,24 +618,22 @@ class ModelTrainingTab(QWidget):
             if is_multimodal:
                 fail_msg = (
                     f"{report_text}\n\n"
-                    f"❌ لا يمكن بدء تدريب المصنف المتعدد الوسائط:\n"
-                    f"يتطلب النموذج تدريب عينتين على الأقل لكل فئة بصيغة الأيدي + الوجه (v2_multimodal).\n"
-                    f"الفئات التي تحوي عينات متعددة الوسائط مستوفية حالياً: {len(inspection['accepted_classes'])} فئة.\n\n"
-                    f"💡 العينات المسجلة مسبقاً (1037 عينة) هي بصيغة Legacy أحادية اليد ولا تحتوي على معالم الوجه.\n"
-                    f"يرجى فتح تبويب Dataset Studio، واختيار نمط «Two Hands + Face»، وتسجيل عينات جديدة بالأيدي والوجه قبل تدريب هذا النموذج."
+                    f"❌ Cannot start training multimodal classifier:\n"
+                    f"Requires at least 2 signs with ≥2 samples each in multimodal format (Hands + Face).\n"
+                    f"Currently qualifying signs: {len(inspection['accepted_classes'])} signs.\n\n"
+                    f"💡 Please open the 'Teach Signs' tab and record new samples with Hands + Face."
                 )
             else:
                 fail_msg = (
                     f"{report_text}\n\n"
-                    f"❌ لا يمكن بدء تدريب المصنف:\n"
-                    f"يتطلب النموذج فئتين صالحتين على الأقل (كل فئة تحوي عينتين فأكثر لتقسيم التدريب والتحقق).\n"
-                    f"الفئات المقبولة حالياً: {len(inspection['accepted_classes'])} فئة.\n\n"
-                    f"يرجى تسجيل عينات إضافية في تبويب Dataset قبل بدء التدريب."
+                    f"❌ Cannot start training classifier:\n"
+                    f"Requires at least 2 signs with ≥2 samples each for training and validation split.\n"
+                    f"Currently qualifying signs: {len(inspection['accepted_classes'])} signs.\n\n"
+                    f"Please record additional samples in the 'Teach Signs' tab."
                 )
-            QMessageBox.warning(self, "بيانات التدريب غير كافية", fail_msg)
+            QMessageBox.warning(self, "Insufficient Training Data", fail_msg)
             return
 
-        # Prepare parameters from UI
         epochs = self._epochs_spin.value()
         batch_size = self._batch_spin.value()
         lr_exponent = self._lr_spin.value()
@@ -580,9 +652,9 @@ class ModelTrainingTab(QWidget):
             out_dir = Path(f"data/models/{target_dialect}")
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # UI state for active training
         self._train_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
+        self._test_in_recog_btn.setVisible(False)
         self._epoch_progress.setValue(0)
         self._epoch_progress.setMaximum(epochs)
         self._epoch_label.setText(f"0 / {epochs}")
@@ -591,9 +663,8 @@ class ModelTrainingTab(QWidget):
         self._accuracy_card.set_value("--")
         self._time_card.set_value("0.0 s")
 
-        self._dataset_info_label.setText(f"{report_text}\n\n⏳ جارٍ التدريب على الفئات المقبولة...")
+        self._dataset_info_label.setText(f"{report_text}\n\n⏳ Training neural network on qualified signs...")
 
-        # Start asynchronous worker
         self._worker = TrainingWorker(
             dataset_path=dataset_base,
             output_dir=out_dir,
@@ -619,7 +690,7 @@ class ModelTrainingTab(QWidget):
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
             self._stop_btn.setEnabled(False)
-            self._dataset_info_label.setText(self._dataset_info_label.text() + "\n\n⏹ جاري إيقاف التدريب...")
+            self._dataset_info_label.setText(self._dataset_info_label.text() + "\n\n⏹ Stopping training...")
 
     def _on_training_progress(
         self, epoch: int, total: int, loss: float, val_loss: float, elapsed_s: float
@@ -633,15 +704,14 @@ class ModelTrainingTab(QWidget):
     def _on_training_success(self, result: dict, report_text: str, dialect: str) -> None:
         self._train_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
+        self._test_in_recog_btn.setVisible(True)
 
         acc = result.get("accuracy", 0.0)
         self._accuracy_card.set_value(f"{acc:.1%}")
 
-        # Reload trained models into active pipeline via DialectManager
         if self._dialect_manager is not None:
             self._dialect_manager.reload_dialect()
 
-        # Update app state
         model_info = ModelInfo(
             dialect_id=dialect,
             model_type=result.get("model_type", "mlp"),
@@ -656,38 +726,37 @@ class ModelTrainingTab(QWidget):
         self.refresh_model_sync_status()
         success_msg = (
             f"{report_text}\n\n"
-            f"🎉 اكتمل التدريب بنجاح!\n"
-            f"  • مسار النموذج: {result.get('model_path')}\n"
-            f"  • مسار القاموس: {result.get('vocab_path')}\n"
-            f"  • الدقة المقاسة: {acc:.1%}\n"
-            f"  • الفئات المدمجة: {classes_str}\n"
-            f"  ✓ تم تحميل النموذج وتفعيله تلقائياً داخل نظام التعرف (Recognition)."
+            f"🎉 Training completed successfully!\n"
+            f"  • Model checkpoint: {result.get('model_path')}\n"
+            f"  • Vocabulary file: {result.get('vocab_path')}\n"
+            f"  • Measured Validation Accuracy: {acc:.1%}\n"
+            f"  • Trained Signs: {classes_str}\n"
+            f"  ✓ Model loaded into memory. Click 'Test Model in Recognition' to begin live testing!"
         )
         self._dataset_info_label.setText(success_msg)
 
         QMessageBox.information(
             self,
-            "اكتمل التدريب",
-            f"تم تدريب النموذج وحفظه وتفعيله بنجاح!\n\n"
-            f"الدقة: {acc:.1%}\n"
-            f"الفئات: {classes_str}\n"
-            f"مسار النموذج: {result.get('model_path')}\n\n"
-            f"النموذج جاهز ومحمّل الآن للاستخدام في تبويب Recognition."
+            "Training Complete",
+            f"Model trained, validated, and saved successfully!\n\n"
+            f"Validation Accuracy: {acc:.1%}\n"
+            f"Trained Signs: {classes_str}\n\n"
+            f"Click 'Test Model in Recognition →' to test your newly trained signs live!",
         )
 
     def _on_training_error(self, error_msg: str, traceback_text: str, report_text: str) -> None:
         self._train_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
+        self._test_in_recog_btn.setVisible(False)
         self._state.error(f"Training failed: {error_msg}")
 
         self._dataset_info_label.setText(
             f"{report_text}\n\n"
-            f"❌ خطأ أثناء التدريب:\n{error_msg}\n\n"
+            f"❌ Training error:\n{error_msg}\n\n"
             f"{traceback_text}"
         )
         QMessageBox.critical(
             self,
-            "خطأ في التدريب",
-            f"فشلت عملية التدريب بسبب الخطأ التالي:\n\n{error_msg}\n\n"
-            f"يمكن مراجعة التفاصيل الكاملة في أسفل التبويب."
+            "Training Error",
+            f"Training failed with error:\n\n{error_msg}",
         )

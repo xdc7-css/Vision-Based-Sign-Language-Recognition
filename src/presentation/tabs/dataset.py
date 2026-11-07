@@ -8,8 +8,9 @@ from typing import Optional
 
 import cv2
 import numpy as np
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -24,12 +25,12 @@ from PySide6.QtWidgets import (
     QSplitter,
     QVBoxLayout,
     QWidget,
-    QCheckBox,
 )
 
 from src.application.state import AppState
 from src.application.use_cases import VideoSourceUseCases
 from src.domain.entities import VideoSourceType
+from src.domain.hand import HandDetectionResult
 from src.domain.multimodal import (
     MULTIMODAL_SCHEMA_VERSION,
     ModalityConfig,
@@ -37,7 +38,6 @@ from src.domain.multimodal import (
     MultimodalFrame,
 )
 from src.infrastructure.camera_service import OpenCVCameraService
-from src.domain.hand import HandDetectionResult
 from src.infrastructure.dataset.collector import DatasetCollector
 from src.infrastructure.dataset.gesture_registry import GestureRegistry
 from src.infrastructure.dataset.organizer import DatasetOrganizer
@@ -51,20 +51,23 @@ from src.presentation.dialogs.dataset_dialogs import (
     EditClassDialog,
     SampleInspectorDialog,
 )
-from src.presentation.widgets import CameraPreview, SectionHeader, StatCard
+from src.presentation.widgets import CameraPreview, StatCard
 
 
 class DatasetCollectionTab(QWidget):
-    """Modern, robust Dataset Studio for capturing and managing Arabic Sign Language datasets.
+    """Modern, robust 'Teach Signs' interface for capturing and managing Arabic Sign Language datasets.
 
     Supports:
+    - Guided 5-Step Workflow (Select -> Camera -> Record -> Review -> Train)
     - DirectShow Camera Selection (HD Webcam, e2eSoft iVCam, USB Cameras)
     - Multimodal Dual-Hand, Face, and Upper-Body Pose tracking and capture
-    - Static Sign Sample Capture (single & multi-sample burst with progress and cancellation)
-    - Dynamic Temporal Sequence Recording (MediaPipe landmark sequence collection)
+    - Static Sign Sample Capture (single & multi-sample burst with Space shortcut)
+    - Dynamic Temporal Sequence Recording
     - Comprehensive Class & Sample Management (Add, Edit, Delete, Sample Inspector, Stats)
-    - Coordinated Camera Ownership preventing device conflicts
+    - Seamless navigation to 'Train Model'
     """
+
+    navigate_to_train = Signal()
 
     def __init__(
         self,
@@ -110,6 +113,7 @@ class DatasetCollectionTab(QWidget):
         self._last_mm_frame: Optional[MultimodalFrame] = None
         self._last_fps_time = time.perf_counter()
         self._fps_counter = 0
+        self._session_samples_count = 0
 
         # Multi-sample static capture state
         self._multi_capture_active = False
@@ -136,15 +140,63 @@ class DatasetCollectionTab(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 14, 20, 14)
+        layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(12)
 
-        header = SectionHeader(
-            "Dataset Studio",
-            "Capture, review, and manage training samples for static signs and dynamic sequences",
-        )
-        layout.addWidget(header)
+        # ── Guided Workflow Banner ───────────────────────────────────────
+        step_banner = QFrame()
+        step_banner.setObjectName("stepBanner")
+        step_banner.setStyleSheet("""
+            QFrame#stepBanner {
+                background-color: #151a21;
+                border: 1px solid #2B3442;
+                border-radius: 8px;
+                padding: 6px 12px;
+            }
+        """)
+        step_layout = QHBoxLayout(step_banner)
+        step_layout.setContentsMargins(10, 4, 10, 4)
+        step_layout.setSpacing(8)
 
+        steps = [
+            ("1", "Select or Add Sign"),
+            ("2", "Check Camera & Hands"),
+            ("3", "Hold Sign & Record"),
+            ("4", "Review Samples"),
+            ("5", "Train Model"),
+        ]
+        for num, text in steps:
+            step_box = QHBoxLayout()
+            step_box.setSpacing(6)
+            num_lbl = QLabel(num)
+            num_lbl.setStyleSheet("""
+                background-color: #2563EB;
+                color: #FFFFFF;
+                font-weight: 700;
+                font-size: 11px;
+                border-radius: 9px;
+                min-width: 18px;
+                max-width: 18px;
+                min-height: 18px;
+                max-height: 18px;
+                qproperty-alignment: AlignCenter;
+            """)
+            step_box.addWidget(num_lbl)
+
+            txt_lbl = QLabel(text)
+            txt_lbl.setStyleSheet("font-size: 12px; font-weight: 600; color: #F3F4F6;")
+            step_box.addWidget(txt_lbl)
+            step_layout.addLayout(step_box)
+
+            if num != "5":
+                arrow_lbl = QLabel("→")
+                arrow_lbl.setStyleSheet("color: #64748B; font-weight: 700; font-size: 13px;")
+                step_layout.addWidget(arrow_lbl)
+
+        step_layout.addStretch()
+        layout.addWidget(step_banner)
+
+        # Main Splitter
         splitter = QSplitter(Qt.Horizontal)
         splitter.setChildrenCollapsible(False)
 
@@ -155,14 +207,13 @@ class DatasetCollectionTab(QWidget):
         left_panel.setObjectName("leftCapturePanel")
         left_panel.setStyleSheet("""
             QFrame#leftCapturePanel {
-                background-color: #181d24;
-                border: 1px solid #2b3441;
+                background-color: #151a21;
+                border: 1px solid #2B3442;
                 border-radius: 8px;
-                padding: 12px;
             }
         """)
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setContentsMargins(12, 12, 12, 12)
         left_layout.setSpacing(10)
 
         # Camera selection bar
@@ -170,7 +221,7 @@ class DatasetCollectionTab(QWidget):
         cam_bar.setSpacing(8)
 
         cam_label = QLabel("Camera:")
-        cam_label.setStyleSheet("font-weight: 600; color: #94a3b8;")
+        cam_label.setStyleSheet("font-weight: 600; color: #94A3B8;")
         cam_bar.addWidget(cam_label)
 
         self._camera_combo = QComboBox()
@@ -203,9 +254,9 @@ class DatasetCollectionTab(QWidget):
         cam_status_row = QHBoxLayout()
         self._status_badge = QLabel("Camera Ready")
         self._status_badge.setStyleSheet("""
-            background-color: #14181f;
-            color: #94a3b8;
-            border: 1px solid #2b3441;
+            background-color: #101419;
+            color: #94A3B8;
+            border: 1px solid #2B3442;
             border-radius: 4px;
             padding: 3px 8px;
             font-size: 11px;
@@ -213,14 +264,19 @@ class DatasetCollectionTab(QWidget):
         """)
         cam_status_row.addWidget(self._status_badge)
 
-        self._fps_indicator = QLabel("FPS: --")
-        self._fps_indicator.setStyleSheet("color: #64748b; font-size: 12px; font-weight: 500;")
-        cam_status_row.addWidget(self._fps_indicator)
+        self._session_counter_lbl = QLabel("Session: 0 samples")
+        self._session_counter_lbl.setStyleSheet("color: #14B8A6; font-size: 12px; font-weight: 600; padding-left: 6px;")
+        cam_status_row.addWidget(self._session_counter_lbl)
+
         cam_status_row.addStretch()
+
+        self._fps_indicator = QLabel("FPS: --")
+        self._fps_indicator.setStyleSheet("color: #64748B; font-size: 12px; font-weight: 500;")
+        cam_status_row.addWidget(self._fps_indicator)
 
         left_layout.addLayout(cam_status_row)
 
-        # Multimodal Tracking Telemetry Row (Left Hand, Right Hand, Face, Pose)
+        # Multimodal Tracking Telemetry Row
         stats_row = QHBoxLayout()
         stats_row.setSpacing(6)
         self._lh_card = StatCard("Left Hand", "Missing")
@@ -238,9 +294,9 @@ class DatasetCollectionTab(QWidget):
         capture_controls.setObjectName("captureControlsCard")
         capture_controls.setStyleSheet("""
             QFrame#captureControlsCard {
-                background-color: #14181f;
-                border: 1px solid #2b3441;
-                border-radius: 6px;
+                background-color: #101419;
+                border: 1px solid #2B3442;
+                border-radius: 8px;
                 padding: 10px;
             }
         """)
@@ -252,11 +308,11 @@ class DatasetCollectionTab(QWidget):
         modality_bar.setSpacing(8)
 
         mod_lbl = QLabel("Modality:")
-        mod_lbl.setStyleSheet("font-weight: 600; color: #94a3b8; font-size: 11px;")
+        mod_lbl.setStyleSheet("font-weight: 600; color: #94A3B8; font-size: 12px;")
         modality_bar.addWidget(mod_lbl)
 
         self._modality_combo = QComboBox()
-        self._modality_combo.addItem("Two Hands + Face (Standard)", "two_hands_face")
+        self._modality_combo.addItem("Two Hands + Face (Recommended)", "two_hands_face")
         self._modality_combo.addItem("Two Hands Only", "two_hands")
         self._modality_combo.addItem("Two Hands + Face + Pose", "two_hands_face_pose")
         self._modality_combo.addItem("One Hand (Legacy v1)", "one_hand")
@@ -281,38 +337,27 @@ class DatasetCollectionTab(QWidget):
 
         capture_layout.addLayout(modality_bar)
 
-        # Capture buttons row
+        # Prominent Capture buttons row
         btn_row = QHBoxLayout()
-        self._capture_btn = QPushButton("📸  Capture Static Sign")
-        self._capture_btn.setObjectName("successButton")
-        self._capture_btn.setStyleSheet("""
-            QPushButton#successButton {
-                background-color: #059669;
-                color: #ffffff;
-                font-weight: 600;
-                padding: 8px 14px;
-                border-radius: 4px;
-            }
-            QPushButton#successButton:hover {
-                background-color: #10b981;
-            }
-        """)
-        btn_row.addWidget(self._capture_btn)
+        btn_row.setSpacing(8)
 
-        self._batch_capture_btn = QPushButton("📹  Record Dynamic Sequence")
-        self._batch_capture_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2563eb;
-                color: #ffffff;
-                font-weight: 600;
-                padding: 8px 14px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #3b82f6;
-            }
-        """)
-        btn_row.addWidget(self._batch_capture_btn)
+        self._capture_btn = QPushButton("●  Record Sample (Space)")
+        self._capture_btn.setObjectName("actionButton")
+        self._capture_btn.setMinimumHeight(40)
+        self._capture_btn.setToolTip("Record 1 static sign sample (or press Space key)")
+        btn_row.addWidget(self._capture_btn, stretch=2)
+
+        self._burst_btn = QPushButton("⚡ Burst (5)")
+        self._burst_btn.setObjectName("successButton")
+        self._burst_btn.setMinimumHeight(40)
+        self._burst_btn.setToolTip("Rapidly record 5 consecutive samples with 0.4s interval")
+        self._burst_btn.clicked.connect(self._on_burst_clicked)
+        btn_row.addWidget(self._burst_btn, stretch=1)
+
+        self._batch_capture_btn = QPushButton("📹 Dynamic")
+        self._batch_capture_btn.setMinimumHeight(40)
+        self._batch_capture_btn.setToolTip("Record continuous motion sequence")
+        btn_row.addWidget(self._batch_capture_btn, stretch=1)
 
         self._cancel_capture_btn = QPushButton("Cancel")
         self._cancel_capture_btn.setObjectName("dangerButton")
@@ -324,8 +369,8 @@ class DatasetCollectionTab(QWidget):
 
         # Sample count selector & Progress
         count_layout = QHBoxLayout()
-        count_label = QLabel("Samples to record:")
-        count_label.setStyleSheet("color: #94a3b8;")
+        count_label = QLabel("Recording Quantity:")
+        count_label.setStyleSheet("color: #94A3B8; font-size: 12px;")
         count_layout.addWidget(count_label)
 
         self._samples_spin = QSpinBox()
@@ -342,8 +387,20 @@ class DatasetCollectionTab(QWidget):
         count_layout.addWidget(self._capture_progress, stretch=1)
 
         capture_layout.addLayout(count_layout)
-        left_layout.addWidget(capture_controls)
 
+        # Instant Visual Feedback Alert
+        self._save_feedback_lbl = QLabel("")
+        self._save_feedback_lbl.setStyleSheet("""
+            color: #10B981;
+            font-weight: 700;
+            font-size: 13px;
+            qproperty-alignment: AlignCenter;
+            padding: 2px;
+        """)
+        self._save_feedback_lbl.setVisible(False)
+        capture_layout.addWidget(self._save_feedback_lbl)
+
+        left_layout.addWidget(capture_controls)
         splitter.addWidget(left_panel)
 
         # ═════════════════════════════════════════════════════════════════
@@ -353,99 +410,68 @@ class DatasetCollectionTab(QWidget):
         right_panel.setObjectName("rightClassPanel")
         right_panel.setStyleSheet("""
             QFrame#rightClassPanel {
-                background-color: #181d24;
-                border: 1px solid #2b3441;
+                background-color: #151a21;
+                border: 1px solid #2B3442;
                 border-radius: 8px;
-                padding: 12px;
             }
         """)
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(10, 10, 10, 10)
+        right_layout.setContentsMargins(12, 12, 12, 12)
         right_layout.setSpacing(10)
 
         # Class list header & action buttons
         class_header = QHBoxLayout()
-        self._class_header_label = QLabel("Gesture Classes")
-        self._class_header_label.setStyleSheet("font-size: 14px; font-weight: 700; color: #f8fafc;")
+        self._class_header_label = QLabel("Gesture Signs")
+        self._class_header_label.setStyleSheet("font-size: 15px; font-weight: 700; color: #F3F4F6;")
         class_header.addWidget(self._class_header_label)
         class_header.addStretch()
 
-        self._add_class_btn = QPushButton("+ Add Class")
+        self._add_class_btn = QPushButton("+ Add Sign")
+        self._add_class_btn.setObjectName("primaryButton")
         self._add_class_btn.setToolTip("Add new Arabic sign class")
         class_header.addWidget(self._add_class_btn)
 
-        self._edit_class_btn = QPushButton("✏️ Rename / Edit")
-        self._edit_class_btn.setToolTip("Rename or edit category of selected class")
+        self._edit_class_btn = QPushButton("✎ Rename")
+        self._edit_class_btn.setToolTip("Rename or edit category of selected sign")
         self._edit_class_btn.setEnabled(False)
         class_header.addWidget(self._edit_class_btn)
 
-        self._delete_class_btn = QPushButton("🗑️ Delete / Archive")
-        self._delete_class_btn.setToolTip("Delete or archive selected class")
+        self._delete_class_btn = QPushButton("🗑 Delete")
+        self._delete_class_btn.setToolTip("Delete or archive selected sign")
         self._delete_class_btn.setEnabled(False)
         class_header.addWidget(self._delete_class_btn)
 
         right_layout.addLayout(class_header)
 
-        # Simple Class Organization (Search & Filter bar)
+        # Search & Filter box
         search_filter_box = QVBoxLayout()
         search_filter_box.setSpacing(6)
 
         search_row = QHBoxLayout()
         self._search_edit = QLineEdit()
-        self._search_edit.setPlaceholderText("🔍  Search classes (Arabic text)...")
+        self._search_edit.setPlaceholderText("🔍  Search sign gestures (Arabic text)...")
         self._search_edit.setClearButtonEnabled(True)
-        self._search_edit.setStyleSheet("""
-            QLineEdit {
-                background-color: #0f1319;
-                border: 1px solid #2b3441;
-                border-radius: 4px;
-                padding: 6px 10px;
-                color: #f8fafc;
-                font-size: 12px;
-            }
-            QLineEdit:focus {
-                border-color: #0d9488;
-            }
-        """)
         search_row.addWidget(self._search_edit, stretch=1)
 
         self._sort_btn = QPushButton("Sort A-Z")
         self._sort_btn.setCheckable(True)
         self._sort_btn.setChecked(True)
         self._sort_btn.setToolTip("Toggle alphabetical sorting")
-        self._sort_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1e293b;
-                border: 1px solid #334155;
-                color: #94a3b8;
-                padding: 5px 10px;
-                font-size: 11px;
-                border-radius: 4px;
-            }
-            QPushButton:checked {
-                background-color: #0f766e;
-                color: #ffffff;
-                border-color: #14b8a6;
-            }
-        """)
         search_row.addWidget(self._sort_btn)
         search_filter_box.addLayout(search_row)
 
         filter_row = QHBoxLayout()
         filter_row.setSpacing(6)
 
-        status_lbl = QLabel("Filter:")
-        status_lbl.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 600;")
-        filter_row.addWidget(status_lbl)
+        self._with_samples_first_check = QCheckBox("Signs with samples first")
+        self._with_samples_first_check.setChecked(True)
+        self._with_samples_first_check.toggled.connect(self._apply_filters_and_populate)
+        filter_row.addWidget(self._with_samples_first_check)
 
-        self._status_filter_combo = QComboBox()
-        self._status_filter_combo.addItem("All Classes", "all")
-        self._status_filter_combo.addItem("With Samples Only", "with_samples")
-        self._status_filter_combo.addItem("Empty Only", "empty")
-        filter_row.addWidget(self._status_filter_combo, stretch=1)
+        filter_row.addStretch()
 
         type_lbl = QLabel("Type:")
-        type_lbl.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 600;")
+        type_lbl.setStyleSheet("color: #94A3B8; font-size: 11px; font-weight: 600;")
         filter_row.addWidget(type_lbl)
 
         self._type_filter_combo = QComboBox()
@@ -454,7 +480,13 @@ class DatasetCollectionTab(QWidget):
         self._type_filter_combo.addItem("Dynamic Sequences", "dynamic")
         self._type_filter_combo.addItem("Both Types", "both")
         self._type_filter_combo.addItem("Alphabet Letters", "alphabet")
-        filter_row.addWidget(self._type_filter_combo, stretch=1)
+        filter_row.addWidget(self._type_filter_combo)
+
+        self._status_filter_combo = QComboBox()
+        self._status_filter_combo.addItem("All Classes", "all")
+        self._status_filter_combo.addItem("With Samples", "with_samples")
+        self._status_filter_combo.addItem("Empty", "empty")
+        filter_row.addWidget(self._status_filter_combo)
 
         search_filter_box.addLayout(filter_row)
         right_layout.addLayout(search_filter_box)
@@ -463,20 +495,21 @@ class DatasetCollectionTab(QWidget):
         self._class_list = QListWidget()
         self._class_list.setStyleSheet("""
             QListWidget {
-                background-color: #0f1319;
-                border: 1px solid #2b3441;
+                background-color: #101419;
+                border: 1px solid #2B3442;
                 border-radius: 6px;
                 padding: 6px;
-                color: #f8fafc;
+                color: #F3F4F6;
                 font-size: 13px;
             }
             QListWidget::item {
-                padding: 6px 10px;
+                padding: 8px 12px;
                 border-radius: 4px;
+                margin-bottom: 2px;
             }
             QListWidget::item:selected {
-                background-color: #1e3a5f;
-                color: #38bdf8;
+                background-color: #2563EB;
+                color: #FFFFFF;
                 font-weight: 600;
             }
         """)
@@ -484,12 +517,12 @@ class DatasetCollectionTab(QWidget):
 
         # Class Action Strip
         class_action_bar = QHBoxLayout()
-        self._inspect_btn = QPushButton("🔍 Inspect Samples")
-        self._inspect_btn.setToolTip("View, inspect, and delete individual samples for selected class")
+        self._inspect_btn = QPushButton("👁 Review / Inspect Samples")
+        self._inspect_btn.setToolTip("View, inspect, and delete individual samples for selected sign")
         self._inspect_btn.setEnabled(False)
         class_action_bar.addWidget(self._inspect_btn)
 
-        self._refresh_stats_btn = QPushButton("🔄 Refresh Stats")
+        self._refresh_stats_btn = QPushButton("🔄 Refresh")
         self._refresh_stats_btn.setToolTip("Rescan dataset from disk and update statistics")
         class_action_bar.addWidget(self._refresh_stats_btn)
 
@@ -499,14 +532,40 @@ class DatasetCollectionTab(QWidget):
         stats_grid = QHBoxLayout()
         self._total_card = StatCard("Total Samples", "0")
         stats_grid.addWidget(self._total_card)
-        self._classes_card = StatCard("Classes", "0")
+        self._classes_card = StatCard("Signs", "0")
         stats_grid.addWidget(self._classes_card)
-        self._split_card = StatCard("Static / Dynamic", "0 / 0")
+        self._split_card = StatCard("Static / Dyn", "0 / 0")
         stats_grid.addWidget(self._split_card)
         self._latest_card = StatCard("Latest Action", "Ready")
         stats_grid.addWidget(self._latest_card)
 
         right_layout.addLayout(stats_grid)
+
+        # ── Step 5 CTA Card: Train Model Now ─────────────────────────────
+        cta_card = QFrame()
+        cta_card.setObjectName("ctaCard")
+        cta_card.setStyleSheet("""
+            QFrame#ctaCard {
+                background-color: #101419;
+                border: 1px solid #2563EB;
+                border-radius: 8px;
+                padding: 10px 14px;
+            }
+        """)
+        cta_layout = QHBoxLayout(cta_card)
+        cta_layout.setContentsMargins(8, 6, 8, 6)
+
+        self._ready_to_train_lbl = QLabel("Ready to train? Add samples to at least 2 signs.")
+        self._ready_to_train_lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #F3F4F6;")
+        cta_layout.addWidget(self._ready_to_train_lbl, stretch=1)
+
+        self._train_now_btn = QPushButton("🚀 Train Model Now →")
+        self._train_now_btn.setObjectName("actionButton")
+        self._train_now_btn.setToolTip("Navigate to Train Model tab to train neural network")
+        self._train_now_btn.clicked.connect(self._on_train_now_clicked)
+        cta_layout.addWidget(self._train_now_btn)
+
+        right_layout.addWidget(cta_card)
 
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 56)
@@ -538,6 +597,17 @@ class DatasetCollectionTab(QWidget):
         self._type_filter_combo.currentIndexChanged.connect(self._apply_filters_and_populate)
         self._sort_btn.toggled.connect(self._apply_filters_and_populate)
 
+    # ── Keyboard Shortcuts ───────────────────────────────────────────────
+
+    def keyPressEvent(self, event) -> None:
+        """Allow pressing Space to capture sample when camera is active."""
+        if event.key() == Qt.Key_Space:
+            if self._is_streaming and not self._multi_capture_active and not self._search_edit.hasFocus():
+                self._on_capture_clicked()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
     # ── Camera Operations ────────────────────────────────────────────────
 
     def _refresh_camera_list(self) -> None:
@@ -546,23 +616,28 @@ class DatasetCollectionTab(QWidget):
         self._camera_combo.blockSignals(True)
         self._camera_combo.clear()
 
-        # Check if state has remembered camera selection
         saved_idx = getattr(self._state, "selected_camera_index", None)
-        target_idx = current_sel if current_sel is not None else saved_idx
+        if current_sel is None and saved_idx is not None:
+            current_sel = saved_idx
 
-        cameras = self._camera_service.list_cameras(force_refresh=True, active_index=current_sel if self._is_streaming else None)
+        active_idx = current_sel if self._is_streaming else None
+        cameras = self._camera_service.list_cameras(force_refresh=True, active_index=active_idx)
+
         if not cameras:
-            self._camera_combo.addItem("No cameras found", None)
+            self._camera_combo.addItem("No Camera Detected", None)
             self._camera_combo.setEnabled(False)
             self._cam_start_btn.setEnabled(False)
             self._status_badge.setText("No Camera Detected")
-            self._status_badge.setStyleSheet("background-color: #3b1d1d; color: #ef4444; border: 1px solid #7f1d1d; border-radius: 4px; padding: 3px 8px;")
+            self._status_badge.setStyleSheet(
+                "background-color: #3b1d1d; color: #ef4444; border: 1px solid #7f1d1d; "
+                "border-radius: 4px; padding: 3px 8px;"
+            )
         else:
             self._camera_combo.setEnabled(True)
             self._cam_start_btn.setEnabled(True)
-            pick_idx = 0
+            sel_idx = 0
             for i, cam in enumerate(cameras):
-                label = f"{cam.name}"
+                label = cam.name
                 if cam.device_type == "laptop":
                     label += " (Laptop Camera)"
                 elif "ivcam" in cam.name.lower() or cam.device_type == "virtual":
@@ -571,32 +646,33 @@ class DatasetCollectionTab(QWidget):
                     label += " (USB Camera)"
 
                 self._camera_combo.addItem(label, cam.index)
-                if target_idx is not None and cam.index == target_idx:
-                    pick_idx = i
+                if current_sel is not None and cam.index == current_sel:
+                    sel_idx = i
 
-            self._camera_combo.setCurrentIndex(pick_idx)
+            self._camera_combo.setCurrentIndex(sel_idx)
             if not self._is_streaming:
                 self._status_badge.setText("Camera Ready")
-                self._status_badge.setStyleSheet("background-color: #14181f; color: #94a3b8; border: 1px solid #2b3441; border-radius: 4px; padding: 3px 8px;")
+                self._status_badge.setStyleSheet(
+                    "background-color: #101419; color: #94A3B8; border: 1px solid #2B3442; "
+                    "border-radius: 4px; padding: 3px 8px;"
+                )
 
         self._camera_combo.blockSignals(False)
 
+    @Slot()
     def _start_camera(self) -> None:
-        """Start local camera stream for dataset collection."""
+        """Start capturing from currently selected camera."""
         idx = self._camera_combo.currentData()
         if idx is None:
             return
 
         self._first_frame_rendered = False
         self._status_badge.setText("Connecting...")
-        self._status_badge.setStyleSheet("background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; border-radius: 4px; padding: 3px 8px;")
-        self._preview.set_connecting(title="Connecting to Camera...", subtitle=f"Initializing DirectShow device (Index {idx})")
-
-        # Remember selection
-        self._state.selected_camera_index = idx
-
-        # Ensure any active streaming on source is cleanly stopped first
-        self._source_use_cases.stop()
+        self._status_badge.setStyleSheet(
+            "background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; "
+            "border-radius: 4px; padding: 3px 8px; font-weight: 600;"
+        )
+        self._preview.set_connecting(title="Connecting to Camera...", subtitle=f"DirectShow device Index {idx}")
 
         self._source_use_cases.select_source(
             VideoSourceType.WEBCAM,
@@ -605,88 +681,79 @@ class DatasetCollectionTab(QWidget):
             resolution=(640, 480),
         )
 
-        success = self._source_use_cases.start()
-        if success:
+        ok = self._source_use_cases.start()
+        if ok:
             self._is_streaming = True
             self._cam_start_btn.setEnabled(False)
             self._cam_stop_btn.setEnabled(True)
             self._cam_timer.start(30)
-            self._readiness_card.set_value("Searching for hand...")
-            self._fps_counter = 0
-            self._last_fps_time = time.perf_counter()
+            self._latest_card.set_value("Camera Live")
         else:
             self._status_badge.setText("Failed to Open")
-            self._status_badge.setStyleSheet("background-color: #3b1d1d; color: #ef4444; border: 1px solid #7f1d1d; border-radius: 4px; padding: 3px 8px;")
-            self._preview.set_error(title="Camera Error", subtitle=f"Failed to acquire video stream from device {idx}")
+            self._status_badge.setStyleSheet(
+                "background-color: #3b1d1d; color: #ef4444; border: 1px solid #7f1d1d; "
+                "border-radius: 4px; padding: 3px 8px;"
+            )
+            self._preview.set_error(title="Camera Error", subtitle=f"Device {idx} could not be acquired")
 
+    @Slot()
     def _stop_camera(self) -> None:
-        """Stop local camera stream and clean up resources."""
+        """Stop capturing and release camera cleanly."""
         self._cam_timer.stop()
-        self._cancel_capture()
+        if self._multi_capture_active:
+            self._cancel_capture()
         if self._dynamic_recording_active:
             self._dynamic_recording_active = False
-            self._batch_capture_btn.setText("📹  Record Dynamic Sequence")
-            self._batch_capture_btn.setStyleSheet("")
 
         self._source_use_cases.stop()
         self._is_streaming = False
         self._first_frame_rendered = False
-
         self._cam_start_btn.setEnabled(True)
         self._cam_stop_btn.setEnabled(False)
-        self._preview.set_standby()
         self._status_badge.setText("Camera Ready")
-        self._status_badge.setStyleSheet("background-color: #14181f; color: #94a3b8; border: 1px solid #2b3441; border-radius: 4px; padding: 3px 8px;")
+        self._status_badge.setStyleSheet(
+            "background-color: #101419; color: #94A3B8; border: 1px solid #2B3442; "
+            "border-radius: 4px; padding: 3px 8px;"
+        )
+        self._fps_indicator.setText("FPS: --")
+        self._preview.set_standby()
+
         self._lh_card.set_value("Missing")
         self._rh_card.set_value("Missing")
         self._face_card.set_value("Missing")
-        self._pose_card.set_value("Disabled" if not self._chk_show_pose.isChecked() else "Missing")
-        self._fps_indicator.setText("FPS: --")
-
-    def _on_render_toggles_changed(self) -> None:
-        """Handle visual checkbox toggles for landmarks."""
-        self._renderer.config.show_hands = self._chk_show_hands.isChecked()
-        self._renderer.config.show_face = self._chk_show_face.isChecked()
-        self._renderer.config.show_pose = self._chk_show_pose.isChecked()
-        self._detector.set_pose_enabled(self._chk_show_pose.isChecked())
-        if not self._chk_show_pose.isChecked():
-            self._pose_card.set_value("⊘ Disabled")
-
-    def _on_modality_changed(self, idx: int) -> None:
-        """Handle user changing modality capture mode."""
-        mode_str = self._modality_combo.currentData()
-        if mode_str:
-            try:
-                self._mm_config.mode = ModalityMode(mode_str)
-                self._detector.config.mode = ModalityMode(mode_str)
-            except Exception:
-                pass
-        if mode_str == "two_hands_face_pose":
-            self._chk_show_pose.setChecked(True)
-            self._detector.set_pose_enabled(True)
-        elif mode_str == "one_hand":
-            self._chk_show_face.setChecked(False)
-            self._chk_show_pose.setChecked(False)
-            self._detector.set_pose_enabled(False)
-        elif mode_str in ("two_hands_face", "two_hands"):
-            self._chk_show_hands.setChecked(True)
-            self._chk_show_face.setChecked(mode_str == "two_hands_face")
-        self._on_render_toggles_changed()
+        self._pose_card.set_value("Disabled")
 
     def _on_camera_combo_changed(self, index: int) -> None:
-        """Handle user changing camera selection in dropdown."""
         if index < 0:
             return
         idx = self._camera_combo.currentData()
-        if idx is not None:
+        if idx is not None and hasattr(self._state, "selected_camera_index"):
             self._state.selected_camera_index = idx
 
         if self._is_streaming:
             self._stop_camera()
             QTimer.singleShot(100, self._start_camera)
 
+    def _on_modality_changed(self, index: int) -> None:
+        mode_val = self._modality_combo.currentData()
+        try:
+            self._mm_config.mode = ModalityMode(mode_val)
+        except Exception:
+            pass
+        enable_pose = (mode_val == "two_hands_face_pose")
+        self._chk_show_pose.setChecked(enable_pose)
+        self._mm_config.enable_pose = enable_pose
+        if hasattr(self._detector, "set_config"):
+            self._detector.set_config(self._mm_config)
+        else:
+            self._detector._config = self._mm_config
+
+    def _on_render_toggles_changed(self) -> None:
+        self._renderer.show_hands = self._chk_show_hands.isChecked()
+        self._renderer.show_face = self._chk_show_face.isChecked()
+        self._renderer.show_pose = self._chk_show_pose.isChecked()
+
     def _read_camera_frame(self) -> None:
-        """Timer callback reading frames from active camera."""
         if not self._is_streaming:
             return
 
@@ -694,7 +761,6 @@ class DatasetCollectionTab(QWidget):
         if frame_result is None:
             return
 
-        # Safe extraction of raw BGR frame
         if hasattr(frame_result, "metadata") and "raw_bgr" in frame_result.metadata:
             raw_bgr = frame_result.metadata["raw_bgr"]
         elif hasattr(frame_result, "data"):
@@ -711,7 +777,7 @@ class DatasetCollectionTab(QWidget):
         """Run multimodal detection, render visual skeleton, and update state."""
         self._last_frame = frame
 
-        # Calculate FPS
+        # FPS
         self._fps_counter += 1
         now = time.perf_counter()
         elapsed = now - self._last_fps_time
@@ -721,12 +787,10 @@ class DatasetCollectionTab(QWidget):
             self._fps_counter = 0
             self._last_fps_time = now
 
-        # Run multimodal detection
         try:
             mm_frame = self._detector.detect(frame)
             self._last_mm_frame = mm_frame
 
-            # Populate legacy detection object for compatibility
             hands_list = []
             if mm_frame.left_hand:
                 hands_list.append(mm_frame.left_hand)
@@ -744,21 +808,19 @@ class DatasetCollectionTab(QWidget):
             self._preview.display_frame(frame_rgb)
             return
 
-        # Render skeleton & landmarks
         annotated_bgr = self._renderer.draw(frame.copy(), mm_frame)
         annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
         self._preview.display_frame(annotated_rgb)
 
-        # Transition badge to live streaming upon first valid frame
         if not self._first_frame_rendered:
             self._first_frame_rendered = True
             self._status_badge.setText("● Live Streaming")
             self._status_badge.setStyleSheet(
-                "background-color: #064e3b; color: #10b981; border: 1px solid #047857; "
+                "background-color: #064e3b; color: #10B981; border: 1px solid #047857; "
                 "border-radius: 4px; padding: 3px 8px; font-weight: 600;"
             )
 
-        # Update Multimodal Telemetry cards synchronously
+        # Update Multimodal Telemetry cards
         self._lh_card.set_value("● Detected" if mm_frame.has_left_hand else "○ Missing")
         self._rh_card.set_value("● Detected" if mm_frame.has_right_hand else "○ Missing")
         self._face_card.set_value("● Detected" if mm_frame.has_face else "○ Missing")
@@ -767,7 +829,6 @@ class DatasetCollectionTab(QWidget):
         else:
             self._pose_card.set_value("● Detected" if mm_frame.has_pose else "○ Missing")
 
-        # Accumulate frames during dynamic sequence recording
         if self._dynamic_recording_active:
             mode_val = self._modality_combo.currentData()
             if mode_val == "one_hand":
@@ -790,18 +851,23 @@ class DatasetCollectionTab(QWidget):
     # ── Static Sign Capture ──────────────────────────────────────────────
 
     def _get_selected_class_label(self) -> Optional[str]:
-        """Extract clean class label from currently selected item in list."""
         item = self._class_list.currentItem()
         if not item:
             return None
-        val = item.data(Qt.UserRole)
-        if val:
-            return str(val).strip()
+        data = item.data(Qt.UserRole)
+        if data:
+            return str(data).strip()
         raw_text = item.text().strip()
         clean = re.sub(r'\s*\[[^\]]*\]\s*', '', raw_text).strip()
         clean = re.sub(r'\s*\([^)]*\)\s*', '', clean).strip()
         clean = re.sub(r'⚠️\s*', '', clean).strip()
         return clean or None
+
+    @Slot()
+    def _on_burst_clicked(self) -> None:
+        """Trigger burst capture of 5 samples."""
+        self._samples_spin.setValue(5)
+        self._on_capture_clicked()
 
     @Slot()
     def _on_capture_clicked(self) -> None:
@@ -812,12 +878,11 @@ class DatasetCollectionTab(QWidget):
 
         label = self._get_selected_class_label()
         if not label:
-            QMessageBox.warning(self, "Select Class", "Please select a gesture class from the list first.")
+            QMessageBox.warning(self, "Select Sign", "Please select a sign from the list first.")
             return
 
         mode_val = self._modality_combo.currentData()
 
-        # Check required modalities
         if mode_val == "one_hand":
             if not self._last_detection or not self._last_detection.has_hands:
                 QMessageBox.warning(
@@ -836,36 +901,40 @@ class DatasetCollectionTab(QWidget):
             if mode_val in ("two_hands_face", "two_hands_face_pose") and not self._last_mm_frame.has_face:
                 QMessageBox.warning(
                     self, "Face Not Detected",
-                    "Face detection is required for this modality.\nPlease look towards the camera so your face is clearly visible."
+                    "Face detection is required for multimodal sign recording.\nPlease look towards the camera."
                 )
                 return
 
             if mode_val == "two_hands_face_pose" and not self._last_mm_frame.has_pose:
                 QMessageBox.warning(
                     self, "Pose Not Detected",
-                    "Upper-body pose is required for this modality.\nPlease step back slightly so your shoulders and arms are in view."
+                    "Upper-body pose is required for this modality.\nPlease step back slightly."
                 )
                 return
 
         count = self._samples_spin.value()
         if count == 1:
-            # Single sample capture
             success = self._save_single_static_sample(label)
             if success:
+                self._session_samples_count += 1
+                self._session_counter_lbl.setText(f"Session: {self._session_samples_count} samples")
                 self._latest_card.set_value(f"Saved: {label}")
+                self._show_feedback(f"✓ Saved sample for «{label}»")
                 self._update_stats_and_list()
             else:
-                QMessageBox.warning(self, "Save Error", "Failed to capture or validate sample. Please try again.")
+                QMessageBox.warning(self, "Save Error", "Failed to capture sample. Please hold steady and try again.")
         else:
-            # Multi-sample continuous capture
             self._start_multi_capture(label, count)
 
+    def _show_feedback(self, text: str) -> None:
+        self._save_feedback_lbl.setText(text)
+        self._save_feedback_lbl.setVisible(True)
+        QTimer.singleShot(2500, lambda: self._save_feedback_lbl.setVisible(False))
+
     def _save_single_static_sample(self, label: str) -> bool:
-        """Capture and save one valid static sign sample to disk with verification."""
         mode_val = self._modality_combo.currentData()
 
         if mode_val == "one_hand":
-            # Legacy single hand mode
             if not self._last_detection or not self._last_detection.has_hands:
                 return False
 
@@ -907,7 +976,6 @@ class DatasetCollectionTab(QWidget):
                     shutil.rmtree(sample_dir, ignore_errors=True)
                     return False
 
-                self._logger.info(f"Saved static sample (legacy v1) for '{label}' to {sample_dir}")
                 return True
             except Exception as e:
                 self._logger.error(f"Failed to save static sample: {e}")
@@ -916,7 +984,6 @@ class DatasetCollectionTab(QWidget):
                 return False
 
         else:
-            # Multimodal mode (v2)
             if not self._last_mm_frame:
                 return False
 
@@ -952,19 +1019,16 @@ class DatasetCollectionTab(QWidget):
                     "timestamp": time.time(),
                     "num_frames": 1,
                     "num_hands": self._last_mm_frame.total_hands_detected,
-                    "handedness": "Both" if (self._last_mm_frame.has_left_hand and self._last_mm_frame.has_right_hand) else ("Left" if self._last_mm_frame.has_left_hand else "Right"),
-                    "duration_seconds": 0.0,
-                    "fps": 30.0,
-                    "has_motion": False,
-                    "total_distance": 0.0,
-                    "motion_energy": 0.0,
-                    "schema_version": MULTIMODAL_SCHEMA_VERSION,
-                    "modality_mode": mode_val,
-                    "feature_dim": expected_dim,
                     "has_left_hand": self._last_mm_frame.has_left_hand,
                     "has_right_hand": self._last_mm_frame.has_right_hand,
                     "has_face": self._last_mm_frame.has_face,
                     "has_pose": self._last_mm_frame.has_pose,
+                    "duration_seconds": 0.0,
+                    "fps": 30.0,
+                    "has_motion": False,
+                    "schema_version": MULTIMODAL_SCHEMA_VERSION,
+                    "modality_mode": mm_mode.value,
+                    "feature_dim": int(feat_vec.shape[0]),
                 }
                 import json
                 with open(sample_dir / "metadata.json", "w", encoding="utf-8") as f:
@@ -976,232 +1040,161 @@ class DatasetCollectionTab(QWidget):
                     shutil.rmtree(sample_dir, ignore_errors=True)
                     return False
 
-                self._logger.info(f"Saved multimodal sample (v2) for '{label}' to {sample_dir}")
                 return True
             except Exception as e:
-                self._logger.error(f"Failed to save multimodal sample: {e}")
+                self._logger.error(f"Failed to save multimodal static sample: {e}")
                 import shutil
                 shutil.rmtree(sample_dir, ignore_errors=True)
                 return False
 
-    def _start_multi_capture(self, label: str, count: int) -> None:
-        """Start multi-sample continuous capture session."""
+    def _start_multi_capture(self, label: str, total_count: int) -> None:
         self._multi_capture_active = True
-        self._target_sample_count = count
+        self._target_sample_count = total_count
         self._captured_sample_count = 0
-        self._current_capture_label = label
-
         self._capture_btn.setEnabled(False)
+        self._burst_btn.setEnabled(False)
         self._batch_capture_btn.setEnabled(False)
         self._cancel_capture_btn.setVisible(True)
         self._capture_progress.setVisible(True)
-        self._capture_progress.setRange(0, count)
         self._capture_progress.setValue(0)
-
-        self._latest_card.set_value(f"Capturing: 0/{count}")
-        self._multi_capture_timer.start(250)  # Capture every 250ms
+        self._multi_capture_timer.start(400)
 
     def _step_multi_capture(self) -> None:
-        """Timer step for continuous multi-sample recording."""
         if not self._multi_capture_active:
             return
 
-        # Check hand presence
-        if self._last_detection and self._last_detection.has_hands:
-            success = self._save_single_static_sample(self._current_capture_label)
-            if success:
-                self._captured_sample_count += 1
-                self._capture_progress.setValue(self._captured_sample_count)
-                self._latest_card.set_value(
-                    f"Capturing: {self._captured_sample_count}/{self._target_sample_count}"
-                )
+        label = self._get_selected_class_label()
+        if not label:
+            self._cancel_capture()
+            return
 
-                if self._captured_sample_count >= self._target_sample_count:
-                    self._finish_multi_capture(success=True)
-        else:
-            self._latest_card.set_value(
-                f"Waiting for hand... ({self._captured_sample_count}/{self._target_sample_count})"
-            )
+        success = self._save_single_static_sample(label)
+        if success:
+            self._captured_sample_count += 1
+            self._session_samples_count += 1
+            self._session_counter_lbl.setText(f"Session: {self._session_samples_count} samples")
+            pct = int((self._captured_sample_count / self._target_sample_count) * 100)
+            self._capture_progress.setValue(pct)
+            self._latest_card.set_value(f"{label}: {self._captured_sample_count}/{self._target_sample_count}")
+            self._show_feedback(f"✓ Recording {self._captured_sample_count}/{self._target_sample_count} for «{label}»")
 
-    def _cancel_capture(self) -> None:
-        """Cancel an in-progress multi-sample capture."""
-        if self._multi_capture_active:
-            self._finish_multi_capture(success=False)
+        if self._captured_sample_count >= self._target_sample_count:
+            self._finish_multi_capture()
 
-    def _finish_multi_capture(self, success: bool) -> None:
-        """Complete multi-sample capture and reset UI state."""
-        self._multi_capture_active = False
+    def _finish_multi_capture(self) -> None:
         self._multi_capture_timer.stop()
-
+        self._multi_capture_active = False
         self._capture_btn.setEnabled(True)
+        self._burst_btn.setEnabled(True)
         self._batch_capture_btn.setEnabled(True)
         self._cancel_capture_btn.setVisible(False)
         self._capture_progress.setVisible(False)
-
         self._update_stats_and_list()
-        label = getattr(self, "_current_capture_label", "")
-        if success:
-            self._latest_card.set_value(f"Saved {self._captured_sample_count} samples")
-            QMessageBox.information(
-                self, "Capture Complete",
-                f"Successfully recorded and validated {self._captured_sample_count} samples for «{label}»."
-            )
-        else:
-            self._latest_card.set_value(f"Cancelled: {self._captured_sample_count} saved")
+
+    def _cancel_capture(self) -> None:
+        self._multi_capture_timer.stop()
+        self._multi_capture_active = False
+        self._capture_btn.setEnabled(True)
+        self._burst_btn.setEnabled(True)
+        self._batch_capture_btn.setEnabled(True)
+        self._cancel_capture_btn.setVisible(False)
+        self._capture_progress.setVisible(False)
+        self._latest_card.set_value("Capture Cancelled")
+        self._update_stats_and_list()
 
     # ── Dynamic Sequence Recording ───────────────────────────────────────
 
     @Slot()
     def _toggle_record_sequence(self) -> None:
-        """Toggle recording of dynamic gesture sequence (multi-frame motion)."""
-        if self._dynamic_recording_active:
-            # Stop and save sequence
-            self._stop_and_save_sequence()
+        if not self._dynamic_recording_active:
+            self._start_record_sequence()
         else:
-            # Start dynamic recording
-            self._start_dynamic_recording()
+            self._stop_record_sequence()
 
-    def _start_dynamic_recording(self) -> None:
-        """Initiate dynamic sequence recording."""
+    def _start_record_sequence(self) -> None:
         if not self._is_streaming or self._last_frame is None:
-            QMessageBox.warning(self, "Camera Required", "Please start the camera before recording a sequence.")
+            QMessageBox.warning(self, "Camera Required", "Please start camera before recording.")
             return
 
         label = self._get_selected_class_label()
         if not label:
-            QMessageBox.warning(self, "Select Class", "Please select a gesture class first.")
+            QMessageBox.warning(self, "Select Sign", "Please select a sign from the list first.")
             return
 
         self._dynamic_recording_active = True
         self._recorded_sequence.clear()
         self._sequence_start_time = time.time()
-        self._current_sequence_label = label
-
-        self._batch_capture_btn.setText("🛑  Stop Recording")
-        self._batch_capture_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #dc2626;
-                color: #ffffff;
-                font-weight: 700;
-                padding: 8px 14px;
-                border-radius: 4px;
-            }
-        """)
+        self._batch_capture_btn.setText("⏹  Stop Recording")
+        self._batch_capture_btn.setStyleSheet("background-color: #dc2626; color: #ffffff; font-weight: 700; padding: 8px 14px; border-radius: 4px;")
         self._capture_btn.setEnabled(False)
-        self._latest_card.set_value("Recording sequence...")
+        self._burst_btn.setEnabled(False)
+        self._latest_card.set_value(f"Recording: {label}")
 
-    def _stop_and_save_sequence(self) -> None:
-        """Stop dynamic sequence recording, validate quality, and save to disk."""
+    def _stop_record_sequence(self) -> None:
         self._dynamic_recording_active = False
-        self._batch_capture_btn.setText("📹  Record Dynamic Sequence")
-        self._batch_capture_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2563eb;
-                color: #ffffff;
-                font-weight: 600;
-                padding: 8px 14px;
-                border-radius: 4px;
-            }
-        """)
+        self._batch_capture_btn.setText("📹 Dynamic")
+        self._batch_capture_btn.setStyleSheet("")
         self._capture_btn.setEnabled(True)
+        self._burst_btn.setEnabled(True)
 
-        frames_count = len(self._recorded_sequence)
-        duration = time.time() - self._sequence_start_time
-        label = getattr(self, "_current_sequence_label", "gesture")
-
-        # Dynamic model quality requirement: minimum 5 frames
-        if frames_count < 5:
-            self._latest_card.set_value(f"Rejected: {frames_count} fr (<5)")
+        label = self._get_selected_class_label()
+        if not label or len(self._recorded_sequence) < 15:
             QMessageBox.warning(
-                self, "Sequence Rejected",
-                f"Sequence rejected: Only {frames_count} valid frames recorded.\n"
-                f"Dynamic sign models require at least 5 frames of continuous movement."
+                self, "Recording Too Short",
+                f"Recorded sequence contains only {len(self._recorded_sequence)} frames (minimum 15 required)."
             )
+            self._recorded_sequence.clear()
             return
 
         mode_val = self._modality_combo.currentData()
-        is_legacy = (mode_val == "one_hand")
+        sanitized = self._organizer.get_class_dir("dynamic", label.replace(" ", "_"))
+        sample_id = uuid.uuid4().hex[:8]
+        sample_dir = sanitized / "samples" / sample_id
+        sample_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            seq_array = np.stack(self._recorded_sequence, axis=0)
-            if np.isnan(seq_array).any():
-                self._latest_card.set_value("Rejected: Invalid data")
-                return
-
-            if is_legacy:
-                if seq_array.shape[1:] != (21, 3):
-                    self._latest_card.set_value("Rejected: Shape mismatch")
-                    return
-            else:
-                try:
-                    mm_mode = ModalityMode(mode_val)
-                except Exception:
-                    mm_mode = ModalityMode.TWO_HANDS_FACE
-                expected_dim = self._extractor.get_feature_dim(mm_mode)
-                if seq_array.shape[1] != expected_dim:
-                    self._latest_card.set_value("Rejected: Shape mismatch")
-                    return
-
-            sanitized_dir = self._organizer.get_class_dir("dynamic", label.replace(" ", "_"))
-            sample_id = uuid.uuid4().hex[:8]
-            sample_dir = sanitized_dir / "samples" / sample_id
-            sample_dir.mkdir(parents=True, exist_ok=True)
-
-            np.save(sample_dir / "landmarks.npy", seq_array)
-
-            # Metadata JSON
+            seq_arr = np.array(self._recorded_sequence, dtype=np.float32)
+            np.save(sample_dir / "landmarks.npy", seq_arr)
+            duration = time.time() - self._sequence_start_time
             meta = {
                 "sample_id": sample_id,
-                "gesture_type": "dynamic_gesture",
+                "gesture_type": "dynamic_phrase",
                 "gesture_label": label,
                 "dialect": "iraqi",
                 "timestamp": time.time(),
-                "num_frames": frames_count,
-                "num_hands": 1 if is_legacy else 2,
-                "handedness": "Right" if is_legacy else "Both",
+                "num_frames": int(seq_arr.shape[0]),
                 "duration_seconds": duration,
-                "fps": frames_count / max(duration, 0.001),
+                "fps": float(seq_arr.shape[0] / max(duration, 0.1)),
                 "has_motion": True,
-                "total_distance": 0.0,
-                "motion_energy": 0.0,
-                "schema_version": "v1_single_hand" if is_legacy else MULTIMODAL_SCHEMA_VERSION,
+                "schema_version": MULTIMODAL_SCHEMA_VERSION if mode_val != "one_hand" else "v1_single_hand",
                 "modality_mode": mode_val,
             }
             import json
             with open(sample_dir / "metadata.json", "w", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2, ensure_ascii=False)
 
-            # Re-verify disk write
-            check = np.load(sample_dir / "landmarks.npy")
-            if check.shape[0] != frames_count:
-                import shutil
-                shutil.rmtree(sample_dir, ignore_errors=True)
-                self._latest_card.set_value("Save Error")
-                return
-
-            self._latest_card.set_value(f"Saved seq ({frames_count} fr)")
+            self._session_samples_count += 1
+            self._session_counter_lbl.setText(f"Session: {self._session_samples_count} samples")
+            self._latest_card.set_value(f"Saved: {label} ({seq_arr.shape[0]} fr)")
+            self._show_feedback(f"✓ Saved dynamic sequence ({seq_arr.shape[0]} frames) for «{label}»")
             self._update_stats_and_list()
-            QMessageBox.information(
-                self, "Sequence Saved",
-                f"Saved dynamic sequence ({frames_count} frames, {duration:.1f}s) for «{label}»."
-            )
         except Exception as e:
             self._logger.error(f"Failed to save dynamic sequence: {e}")
-            self._latest_card.set_value("Save Error")
+            import shutil
+            shutil.rmtree(sample_dir, ignore_errors=True)
+            QMessageBox.critical(self, "Save Error", f"Error saving sequence: {e}")
 
-    # ── Class & Dataset Management ───────────────────────────────────────
+        self._recorded_sequence.clear()
+
+    # ── Classes Management ───────────────────────────────────────────────
 
     def _scan_and_populate_classes(self) -> None:
-        """Reload registry and populate list with real-time filters and sample counts."""
-        self._registry.load_or_initialize()
         self._apply_filters_and_populate()
 
     def _update_stats_and_list(self) -> None:
-        """Update sample counts and active list items."""
         self._apply_filters_and_populate()
 
     def _apply_filters_and_populate(self) -> None:
-        """Filter, sort, and display active gesture classes in the list widget."""
         current_selection = self._get_selected_class_label()
         self._class_list.clear()
 
@@ -1217,26 +1210,32 @@ class DatasetCollectionTab(QWidget):
             sort_alphabetical=sort_az,
         )
 
+        # Optional "signs with samples first" sorting
+        if hasattr(self, "_with_samples_first_check") and self._with_samples_first_check.isChecked():
+            filtered_classes.sort(key=lambda item: (item[1]["total"] == 0, item[0].name))
+
         select_row = 0
         row = 0
         total_samples = 0
         total_static = 0
         total_dynamic = 0
+        classes_with_samples = 0
 
-        # Global totals across all active classes
         all_active = self._registry.list_active_classes()
         for c in all_active:
             counts = self._registry.get_sample_counts(c.name)
             total_samples += counts["total"]
             total_static += counts["static"]
             total_dynamic += counts["dynamic"]
+            if counts["total"] >= 2:
+                classes_with_samples += 1
 
         for cls_obj, counts in filtered_classes:
             static_cnt = counts["static"]
             dynamic_cnt = counts["dynamic"]
             cls_total = counts["total"]
 
-            status_note = " ⚠️ (<2)" if cls_total < 2 else ""
+            status_note = " ⚠️ (need ≥2)" if cls_total < 2 else f" ✓ ({cls_total} samples)"
             cat_display = cls_obj.category.capitalize()
             item_text = f"  {cls_obj.name}   [{cat_display}]   ({static_cnt} static, {dynamic_cnt} dynamic){status_note}"
 
@@ -1258,22 +1257,31 @@ class DatasetCollectionTab(QWidget):
         self._classes_card.set_value(str(len(all_active)))
         self._split_card.set_value(f"{total_static} / {total_dynamic}")
         if hasattr(self, "_class_header_label"):
-            self._class_header_label.setText(f"Gesture Classes ({len(filtered_classes)} of {len(all_active)})")
+            self._class_header_label.setText(f"Gesture Signs ({len(filtered_classes)} of {len(all_active)})")
+
+        # Step 5 CTA banner update
+        if hasattr(self, "_ready_to_train_lbl"):
+            if classes_with_samples >= 2:
+                self._ready_to_train_lbl.setText(f"Ready to Train! {classes_with_samples} signs have ≥2 valid samples.")
+                self._ready_to_train_lbl.setStyleSheet("font-size: 13px; font-weight: 700; color: #10B981;")
+                self._train_now_btn.setEnabled(True)
+            else:
+                self._ready_to_train_lbl.setText(f"Need ≥2 signs with samples to train. ({classes_with_samples} ready)")
+                self._ready_to_train_lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #F59E0B;")
+                self._train_now_btn.setEnabled(True)
 
     def _on_class_selection_changed(self) -> None:
-        """Handle class selection change, updating action buttons state."""
         has_sel = self._class_list.currentItem() is not None
         self._edit_class_btn.setEnabled(has_sel)
         self._delete_class_btn.setEnabled(has_sel)
         self._inspect_btn.setEnabled(has_sel)
 
-        label = self._get_selected_class_label()
-        if label:
-            self._logger.debug(f"Selected gesture class: {label}")
+    @Slot()
+    def _on_train_now_clicked(self) -> None:
+        self.navigate_to_train.emit()
 
     @Slot()
     def _add_class(self) -> None:
-        """Open AddClassDialog and create new gesture class via GestureRegistry."""
         active_names = {c.name for c in self._registry.list_active_classes()}
         dlg = AddClassDialog(existing_names=active_names, parent=self)
         if dlg.exec():
@@ -1282,7 +1290,6 @@ class DatasetCollectionTab(QWidget):
                 cls_obj = self._registry.add_class(name, category=cat_type, description=desc)
                 self._scan_and_populate_classes()
 
-                # Select newly added class
                 for idx in range(self._class_list.count()):
                     item = self._class_list.item(idx)
                     if item.data(Qt.UserRole) == cls_obj.name:
@@ -1290,26 +1297,21 @@ class DatasetCollectionTab(QWidget):
                         break
 
                 self._latest_card.set_value(f"Added: {name}")
-                QMessageBox.information(
-                    self,
-                    "Class Added",
-                    f"Gesture class «{name}» ({cat_type}) created successfully.",
-                )
+                self._show_feedback(f"✓ Added sign «{name}»")
             except Exception as e:
                 self._logger.error(f"Failed to add class '{name}': {e}")
                 QMessageBox.critical(self, "Error Adding Class", str(e))
 
     @Slot()
     def _edit_class(self) -> None:
-        """Open EditClassDialog to rename or change category of the selected class."""
         current_name = self._get_selected_class_label()
         if not current_name:
-            QMessageBox.information(self, "Select Class", "Please select a class to edit.")
+            QMessageBox.information(self, "Select Sign", "Please select a sign to edit.")
             return
 
         cls_obj = self._registry.get_class(current_name)
         if not cls_obj:
-            QMessageBox.warning(self, "Class Not Found", f"Class «{current_name}» not found in registry.")
+            QMessageBox.warning(self, "Not Found", f"Sign «{current_name}» not found.")
             return
 
         counts = self._registry.get_sample_counts(current_name)
@@ -1326,104 +1328,83 @@ class DatasetCollectionTab(QWidget):
         if dlg.exec():
             new_name, new_cat = dlg.get_data()
             try:
-                renamed = False
-                cat_updated = False
                 target_name = current_name
-
                 if new_name != current_name:
                     cls_obj = self._registry.rename_class(current_name, new_name)
                     target_name = new_name
-                    renamed = True
 
                 if new_cat != cls_obj.category:
                     cls_obj = self._registry.update_category(target_name, new_cat)
-                    cat_updated = True
 
                 self._scan_and_populate_classes()
 
-                # Reselect renamed item
                 for idx in range(self._class_list.count()):
                     item = self._class_list.item(idx)
                     if item.data(Qt.UserRole) == target_name:
                         self._class_list.setCurrentRow(idx)
                         break
 
-                msg_parts = []
-                if renamed:
-                    msg_parts.append(f"Renamed to «{target_name}»")
-                if cat_updated:
-                    msg_parts.append(f"Category changed to {new_cat}")
-                msg = "\n".join(msg_parts) if msg_parts else "No changes made."
-
-                self._latest_card.set_value(f"Edited: {target_name}")
-                QMessageBox.information(self, "Class Updated", f"Class «{target_name}» updated successfully.\n\n{msg}")
+                self._latest_card.set_value(f"Updated: {target_name}")
+                self._show_feedback(f"✓ Updated «{target_name}»")
             except Exception as e:
-                self._logger.error(f"Failed to edit class '{current_name}': {e}")
+                self._logger.error(f"Failed to edit class: {e}")
                 QMessageBox.critical(self, "Error Editing Class", str(e))
 
     @Slot()
     def _delete_class(self) -> None:
-        """Delete or archive selected class with explicit confirmation workflow."""
         current_name = self._get_selected_class_label()
         if not current_name:
-            QMessageBox.information(self, "Select Class", "Please select a class to delete or archive.")
+            QMessageBox.information(self, "Select Sign", "Please select a sign to delete.")
             return
 
         cls_obj = self._registry.get_class(current_name)
         if not cls_obj:
-            QMessageBox.warning(self, "Class Not Found", f"Class «{current_name}» not found in registry.")
+            QMessageBox.warning(self, "Not Found", f"Sign «{current_name}» not found.")
             return
 
         counts = self._registry.get_sample_counts(current_name)
-        dlg = DeleteClassDialog(class_name=current_name, sample_counts=counts, parent=self)
+        has_samples = counts["total"] > 0
+
+        dlg = DeleteClassDialog(
+            class_name=current_name,
+            sample_counts=counts,
+            has_samples=has_samples,
+            parent=self,
+        )
 
         if dlg.exec():
-            is_perm = dlg.is_permanent_delete()
+            action = dlg.get_action()
             try:
-                action, affected_samples = self._registry.delete_class(
-                    current_name, permanent_delete_samples=is_perm
-                )
-                self._scan_and_populate_classes()
-
-                if action == "deleted":
-                    self._latest_card.set_value(f"Removed: {current_name}")
-                    QMessageBox.information(
-                        self,
-                        "Class Removed",
-                        f"Empty class «{current_name}» removed from active vocabulary.",
-                    )
-                elif action == "archived":
+                if action == "archive":
+                    self._registry.archive_class(current_name)
                     self._latest_card.set_value(f"Archived: {current_name}")
-                    QMessageBox.information(
-                        self,
-                        "Class Archived",
-                        f"Class «{current_name}» archived from active vocabulary.\n"
-                        f"All {affected_samples} sample files were safely preserved on disk.",
-                    )
-                elif action == "permanently_deleted":
+                    self._show_feedback(f"✓ Archived «{current_name}»")
+                elif action == "delete":
+                    self._registry.delete_class(current_name, delete_sample_files=True)
                     self._latest_card.set_value(f"Deleted: {current_name}")
-                    QMessageBox.information(
-                        self,
-                        "Class Deleted",
-                        f"Class «{current_name}» and its {affected_samples} samples were permanently deleted.",
-                    )
+                    self._show_feedback(f"✓ Deleted «{current_name}»")
+
+                self._scan_and_populate_classes()
             except Exception as e:
-                self._logger.error(f"Failed to delete class '{current_name}': {e}")
+                self._logger.error(f"Failed to delete class: {e}")
                 QMessageBox.critical(self, "Error Deleting Class", str(e))
 
     @Slot()
     def _inspect_samples(self) -> None:
-        """Open SampleInspectorDialog to view and delete individual samples."""
         current_name = self._get_selected_class_label()
         if not current_name:
-            QMessageBox.information(self, "Select Class", "Please select a class first.")
+            QMessageBox.information(self, "Select Sign", "Please select a sign to inspect.")
             return
 
-        dlg = SampleInspectorDialog(current_name, base_dir=self._registry.dataset_dir, parent=self)
+        counts = self._registry.get_sample_counts(current_name)
+        if counts["total"] == 0:
+            QMessageBox.information(self, "No Samples", f"No saved samples exist for «{current_name}».")
+            return
+
+        dlg = SampleInspectorDialog(class_name=current_name, organizer=self._organizer, parent=self)
         dlg.exec()
         self._update_stats_and_list()
 
     def closeEvent(self, event) -> None:
-        """Clean shutdown of timers and camera when tab closes."""
         self._stop_camera()
         super().closeEvent(event)
