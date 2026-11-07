@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": 1794056812.8798423,
+  "updated_at": 1794065074.2166457,
   "classes": [
     {
       "id": "sorry",
@@ -53,6 +53,16 @@
       "updated_at": 1794056812.8448262
     },
     {
+      "id": "custom_احبكم",
+      "name": "احبكم",
+      "category": "both",
+      "description": "Custom Arabic gesture class",
+      "is_active": true,
+      "is_default": false,
+      "created_at": 1794065074.1276293,
+      "updated_at": 1794065074.1276293
+    },
+    {
       "id": "go",
       "name": "اذهب",
       "category": "dynamic",
@@ -71,6 +81,16 @@
       "is_default": false,
       "created_at": 1794056812.8798423,
       "updated_at": 1794056812.8798423
+    },
+    {
+      "id": "custom_انتظر",
+      "name": "انتظر",
+      "category": "both",
+      "description": "Custom Arabic gesture class",
+      "is_active": true,
+      "is_default": false,
+      "created_at": 1794065074.1628265,
+      "updated_at": 1794065074.1628265
     },
     {
       "id": "letter_ب",
@@ -431,6 +451,16 @@
       "is_default": true,
       "created_at": 1794056812.8448262,
       "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "custom_لدي_سؤال",
+      "name": "لدي سؤال",
+      "category": "both",
+      "description": "Custom Arabic gesture class",
+      "is_active": true,
+      "is_default": false,
+      "created_at": 1794065074.2152689,
+      "updated_at": 1794065074.2152689
     },
     {
       "id": "why",

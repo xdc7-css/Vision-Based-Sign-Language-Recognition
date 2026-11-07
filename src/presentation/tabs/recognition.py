@@ -7,6 +7,7 @@ Provides a balanced two-column desktop interface:
 
 from __future__ import annotations
 
+import json
 import logging
 import queue
 import threading
@@ -55,7 +56,7 @@ from src.infrastructure.text_builder import ArabicTextBuilder
 from src.infrastructure.vision.multimodal_detector import MultimodalDetector
 from src.infrastructure.vision.multimodal_renderer import MultimodalRenderer
 from src.presentation.dialogs.karsl_vocab_dialog import KArSLVocabularyDialog
-from src.presentation.widgets import CameraPreview, SectionHeader, StatCard
+from src.presentation.widgets import CameraPreview, StatCard
 
 
 class SignRecognitionWorker(QThread):
@@ -350,9 +351,13 @@ class RecognitionTab(QWidget):
     """Modern, clean desktop interface for Real-Time Arabic Sign Language Recognition.
     
     Layout:
+    - Top Banner: Active model info, trained signs count, retraining alerts, direct Teach Signs CTA.
     - Left Column: Live camera view, DirectShow source selection, clean start/stop controls.
     - Right Column: Recognized Arabic word, confidence meter, sentence builder, TTS speech.
     """
+
+    navigate_to_teach = Signal()
+    navigate_to_train = Signal()
 
     def __init__(
         self,
@@ -421,6 +426,7 @@ class RecognitionTab(QWidget):
         self._setup_ui()
         self._refresh_camera_list()
         self._connect_signals()
+        self._refresh_model_overview_banner()
 
     # ── UI Construction ──────────────────────────────────────────────────
 
@@ -429,12 +435,77 @@ class RecognitionTab(QWidget):
         main_layout.setContentsMargins(18, 14, 18, 14)
         main_layout.setSpacing(12)
 
-        # Header with clean title
-        header = SectionHeader(
-            "Arabic Sign Language Recognition",
-            "Real-time vision translation with MediaPipe tracking and KArSL-502 continuous sign recognition",
+        # ── Top Workflow & Status Banner ─────────────────────────────────
+        top_banner = QFrame()
+        top_banner.setObjectName("topBanner")
+        top_banner.setStyleSheet("""
+            QFrame#topBanner {
+                background-color: #151a21;
+                border: 1px solid #2B3442;
+                border-radius: 8px;
+                padding: 10px 14px;
+            }
+        """)
+        banner_layout = QHBoxLayout(top_banner)
+        banner_layout.setContentsMargins(12, 6, 12, 6)
+        banner_layout.setSpacing(12)
+
+        # App Title & Subtitle
+        header_text_box = QVBoxLayout()
+        header_text_box.setSpacing(2)
+        title_lbl = QLabel("Live Sign Language Recognition")
+        title_lbl.setStyleSheet("font-size: 16px; font-weight: 700; color: #F3F4F6;")
+        header_text_box.addWidget(title_lbl)
+
+        subtitle_lbl = QLabel("Real-time vision translation · Powered by Multimodal tracking")
+        subtitle_lbl.setStyleSheet("font-size: 12px; color: #94A3B8;")
+        header_text_box.addWidget(subtitle_lbl)
+        banner_layout.addLayout(header_text_box)
+
+        banner_layout.addStretch()
+
+        # Outdated notice button (conditionally visible)
+        self._retrain_alert_btn = QPushButton("⚡ New samples recorded — Retrain Model Now →")
+        self._retrain_alert_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #451a03;
+                color: #F59E0B;
+                border: 1px solid #78350f;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 600;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #78350f;
+                color: #FDE68A;
+            }
+        """)
+        self._retrain_alert_btn.setVisible(False)
+        self._retrain_alert_btn.clicked.connect(self._on_retrain_alert_clicked)
+        banner_layout.addWidget(self._retrain_alert_btn)
+
+        # Model Status Badge
+        self._model_status_badge = QLabel("● Pretrained (502 signs)")
+        self._model_status_badge.setStyleSheet(
+            "color: #10B981; font-weight: 600; padding: 6px 12px; background: #064e3b; "
+            "border: 1px solid #047857; border-radius: 6px; font-size: 12px;"
         )
-        main_layout.addWidget(header)
+        banner_layout.addWidget(self._model_status_badge)
+
+        # Vocabulary Button
+        self._vocab_btn = QPushButton("502 Signs List")
+        self._vocab_btn.setToolTip("View full dictionary of supported Arabic signs")
+        banner_layout.addWidget(self._vocab_btn)
+
+        # Direct CTA: Teach Signs
+        self._teach_cta_btn = QPushButton("🎓 Teach Signs →")
+        self._teach_cta_btn.setObjectName("primaryButton")
+        self._teach_cta_btn.setToolTip("Record new Arabic sign gestures and train your custom vocabulary")
+        self._teach_cta_btn.clicked.connect(self._on_teach_cta_clicked)
+        banner_layout.addWidget(self._teach_cta_btn)
+
+        main_layout.addWidget(top_banner)
 
         # Main 2-Column Splitter
         content_splitter = QSplitter(Qt.Horizontal)
@@ -447,43 +518,40 @@ class RecognitionTab(QWidget):
         left_card.setObjectName("leftCameraCard")
         left_card.setStyleSheet("""
             QFrame#leftCameraCard {
-                background-color: #181d24;
-                border: 1px solid #2b3441;
+                background-color: #151a21;
+                border: 1px solid #2B3442;
                 border-radius: 8px;
-                padding: 12px;
             }
         """)
         left_layout = QVBoxLayout(left_card)
-        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setContentsMargins(12, 12, 12, 12)
         left_layout.setSpacing(10)
 
-        # Top Camera Bar: Dropdown + Refresh + Start/Stop + Landmarks
+        # Top Camera Bar: Dropdown + Refresh + Start/Stop
         cam_bar = QHBoxLayout()
         cam_bar.setSpacing(8)
 
         cam_label = QLabel("Camera:")
-        cam_label.setStyleSheet("font-weight: 600; color: #94a3b8;")
+        cam_label.setStyleSheet("font-weight: 600; color: #94A3B8;")
         cam_bar.addWidget(cam_label)
 
         self._camera_combo = QComboBox()
         self._camera_combo.setMinimumWidth(260)
         self._camera_combo.setToolTip("Select camera (HD Webcam or e2eSoft iVCam)")
         cam_bar.addWidget(self._camera_combo, stretch=1)
-
-        # Alias for backward compatibility with internal scripts/tests
-        self._device_combo = self._camera_combo
+        self._device_combo = self._camera_combo  # alias
 
         self._refresh_cam_btn = QPushButton("Refresh")
         self._refresh_cam_btn.setToolTip("Scan system for newly connected webcams or iVCam")
         cam_bar.addWidget(self._refresh_cam_btn)
 
-        # Primary Start / Stop Button
         self._start_stop_btn = QPushButton("Start Camera")
         self._start_stop_btn.setObjectName("primaryButton")
-        self._start_stop_btn.setMinimumWidth(110)
+        self._start_stop_btn.setMinimumWidth(120)
+        self._start_stop_btn.setFixedHeight(34)
         cam_bar.addWidget(self._start_stop_btn)
 
-        # Compatibility aliases for tests that expect _connect_btn, _disconnect_btn, _start_btn, _stop_btn
+        # Compatibility aliases
         self._connect_btn = self._start_stop_btn
         self._disconnect_btn = self._start_stop_btn
         self._start_btn = self._start_stop_btn
@@ -496,15 +564,15 @@ class RecognitionTab(QWidget):
         self._preview.setMinimumSize(480, 360)
         left_layout.addWidget(self._preview, stretch=1)
 
-        # Camera Bottom Controls Strip
+        # Camera Bottom Strip
         bottom_bar = QHBoxLayout()
         bottom_bar.setSpacing(12)
 
         self._status_badge = QLabel("Camera Ready")
         self._status_badge.setStyleSheet("""
-            background-color: #14181f;
-            color: #94a3b8;
-            border: 1px solid #2b3441;
+            background-color: #101419;
+            color: #94A3B8;
+            border: 1px solid #2B3442;
             border-radius: 4px;
             padding: 4px 10px;
             font-size: 12px;
@@ -523,14 +591,14 @@ class RecognitionTab(QWidget):
         bottom_bar.addStretch()
 
         self._fps_indicator = QLabel("FPS: --")
-        self._fps_indicator.setStyleSheet("color: #64748b; font-size: 12px; font-weight: 500;")
+        self._fps_indicator.setStyleSheet("color: #64748B; font-size: 12px; font-weight: 500;")
         bottom_bar.addWidget(self._fps_indicator)
 
         self._resolution_combo = QComboBox()
         self._resolution_combo.addItem("640x480 (Fast)", (640, 480))
         self._resolution_combo.addItem("1280x720 (HD)", (1280, 720))
-        self._resolution_combo.setMinimumWidth(135)
-        self._resolution_combo.setMaximumWidth(160)
+        self._resolution_combo.setMinimumWidth(130)
+        self._resolution_combo.setMaximumWidth(150)
         bottom_bar.addWidget(self._resolution_combo)
 
         left_layout.addLayout(bottom_bar)
@@ -543,40 +611,28 @@ class RecognitionTab(QWidget):
         right_card.setObjectName("rightResultsCard")
         right_card.setStyleSheet("""
             QFrame#rightResultsCard {
-                background-color: #181d24;
-                border: 1px solid #2b3441;
+                background-color: #151a21;
+                border: 1px solid #2B3442;
                 border-radius: 8px;
-                padding: 12px;
             }
         """)
         right_layout = QVBoxLayout(right_card)
-        right_layout.setContentsMargins(10, 10, 10, 10)
+        right_layout.setContentsMargins(14, 12, 14, 12)
         right_layout.setSpacing(12)
 
-        # Model Selector Bar
+        # Active Sign Model Engine Selector (Compact bar)
         model_bar = QHBoxLayout()
         model_bar.setSpacing(8)
 
-        model_label = QLabel("Sign Model:")
-        model_label.setStyleSheet("font-weight: 600; color: #94a3b8;")
-        model_bar.addWidget(model_label)
+        engine_lbl = QLabel("Model Engine:")
+        engine_lbl.setStyleSheet("font-weight: 600; color: #94A3B8; font-size: 12px;")
+        model_bar.addWidget(engine_lbl)
 
         self._engine_selector = QComboBox()
         self._engine_selector.addItem("KArSL-502 (502 Standard Signs)", "karsl")
         self._engine_selector.addItem("Iraqi Custom Classifier (Legacy)", "custom")
         self._engine_selector.addItem("Multimodal Iraqi — Hands + Face", "multimodal")
         model_bar.addWidget(self._engine_selector, stretch=1)
-
-        self._model_status_badge = QLabel("● Pretrained (502 signs)")
-        self._model_status_badge.setStyleSheet(
-            "color: #10b981; font-weight: 600; padding: 3px 8px; background: #064e3b; border-radius: 4px; font-size: 11px;"
-        )
-        model_bar.addWidget(self._model_status_badge)
-
-        self._vocab_btn = QPushButton("502 Signs List")
-        self._vocab_btn.setToolTip("View full dictionary of supported Arabic signs")
-        model_bar.addWidget(self._vocab_btn)
-
         right_layout.addLayout(model_bar)
 
         # Active Sign Detection Display Box
@@ -584,17 +640,17 @@ class RecognitionTab(QWidget):
         detection_box.setObjectName("detectionBox")
         detection_box.setStyleSheet("""
             QFrame#detectionBox {
-                background-color: #14181f;
-                border: 1px solid #2b3441;
+                background-color: #101419;
+                border: 1px solid #2B3442;
                 border-radius: 8px;
             }
         """)
         det_vlayout = QVBoxLayout(detection_box)
-        det_vlayout.setContentsMargins(16, 12, 16, 14)
-        det_vlayout.setSpacing(10)
+        det_vlayout.setContentsMargins(16, 14, 16, 14)
+        det_vlayout.setSpacing(8)
 
         det_header = QLabel("DETECTED SIGN")
-        det_header.setStyleSheet("color: #64748b; font-size: 11px; font-weight: 700; letter-spacing: 1px; background: transparent; border: none;")
+        det_header.setStyleSheet("color: #64748B; font-size: 11px; font-weight: 700; letter-spacing: 1px; background: transparent; border: none;")
         det_vlayout.addWidget(det_header)
 
         # Large prominent Arabic text display
@@ -602,15 +658,15 @@ class RecognitionTab(QWidget):
         self._caption_label.setAlignment(Qt.AlignCenter)
         self._caption_label.setStyleSheet("""
             QLabel {
-                font-size: 32px;
-                font-weight: 700;
-                color: #14b8a6;
-                padding: 4px;
+                font-size: 36px;
+                font-weight: 800;
+                color: #14B8A6;
+                padding: 6px;
                 background: transparent;
                 border: none;
             }
         """)
-        self._caption_label.setMinimumHeight(55)
+        self._caption_label.setMinimumHeight(60)
         self._caption_label.setWordWrap(True)
         det_vlayout.addWidget(self._caption_label)
 
@@ -627,15 +683,16 @@ class RecognitionTab(QWidget):
         conf_row.addWidget(self._conf_bar, stretch=1)
 
         self._conf_badge = QLabel("Confidence: --")
-        self._conf_badge.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 600; min-width: 95px; background: transparent; border: none;")
+        self._conf_badge.setStyleSheet("color: #94A3B8; font-size: 12px; font-weight: 600; min-width: 95px; background: transparent; border: none;")
         conf_row.addWidget(self._conf_badge)
 
         det_vlayout.addLayout(conf_row)
         right_layout.addWidget(detection_box)
 
         # Sentence Construction Card
-        sentence_group = QGroupBox("Constructed Sentence")
+        sentence_group = QGroupBox("Constructed Arabic Sentence")
         sent_layout = QVBoxLayout(sentence_group)
+        sent_layout.setContentsMargins(10, 12, 10, 10)
         sent_layout.setSpacing(8)
 
         self._sentence_edit = QTextEdit()
@@ -647,11 +704,12 @@ class RecognitionTab(QWidget):
         self._sentence_edit.setFont(font)
         sent_layout.addWidget(self._sentence_edit)
 
-        # Sentence Editing Bar: Speak, Space, Delete, Clear
+        # Sentence Editing Bar: Speak, Delete, Clear
         sent_btn_bar = QHBoxLayout()
         sent_btn_bar.setSpacing(6)
 
-        self._speak_btn = QPushButton("Speak (TTS)")
+        self._speak_btn = QPushButton("🔊 Speak (TTS)")
+        self._speak_btn.setObjectName("primaryButton")
         self._speak_btn.setToolTip("Read constructed sentence aloud using speech synthesis")
         sent_btn_bar.addWidget(self._speak_btn)
 
@@ -659,11 +717,11 @@ class RecognitionTab(QWidget):
         self._space_btn.setToolTip("Add space between words")
         sent_btn_bar.addWidget(self._space_btn)
 
-        self._delete_btn = QPushButton("Delete Word")
+        self._delete_btn = QPushButton("⌫ Delete Word")
         self._delete_btn.setToolTip("Remove last recognized word")
         sent_btn_bar.addWidget(self._delete_btn)
 
-        self._clear_btn = QPushButton("Clear")
+        self._clear_btn = QPushButton("✕ Clear")
         self._clear_btn.setObjectName("dangerButton")
         self._clear_btn.setToolTip("Clear current sentence")
         sent_btn_bar.addWidget(self._clear_btn)
@@ -677,11 +735,11 @@ class RecognitionTab(QWidget):
         hist_layout.setContentsMargins(6, 6, 6, 6)
 
         self._history_list = QListWidget()
-        self._history_list.setMaximumHeight(140)
+        self._history_list.setMaximumHeight(130)
         hist_layout.addWidget(self._history_list)
         right_layout.addWidget(history_group, stretch=1)
 
-        # Quick Overlay Action Bar
+        # Secondary Actions
         overlay_bar = QHBoxLayout()
         self._toggle_overlay_btn = QPushButton("Toggle Desktop Subtitles")
         self._toggle_overlay_btn.setToolTip("Show/hide transparent desktop subtitle overlay")
@@ -694,9 +752,9 @@ class RecognitionTab(QWidget):
         right_layout.addLayout(overlay_bar)
         content_splitter.addWidget(right_card)
 
-        # Set balanced splitter proportions (58% left, 42% right)
-        content_splitter.setStretchFactor(0, 58)
-        content_splitter.setStretchFactor(1, 42)
+        # Set balanced splitter proportions (60% left, 40% right)
+        content_splitter.setStretchFactor(0, 60)
+        content_splitter.setStretchFactor(1, 40)
         main_layout.addWidget(content_splitter, stretch=1)
 
         # Stat cards compatibility for internal references
@@ -724,6 +782,40 @@ class RecognitionTab(QWidget):
         self._speak_btn.clicked.connect(self._on_speak_clicked)
         self._screenshot_btn.clicked.connect(self._take_screenshot)
         self._toggle_overlay_btn.clicked.connect(self._toggle_overlay)
+
+    # ── Workflow & Navigation ────────────────────────────────────────────
+
+    def _on_teach_cta_clicked(self) -> None:
+        self.navigate_to_teach.emit()
+
+    def _on_retrain_alert_clicked(self) -> None:
+        self.navigate_to_train.emit()
+
+    def _refresh_model_overview_banner(self) -> None:
+        """Check whether models are trained and if new samples require retraining."""
+        # Check retraining needed
+        model_file = Path("data/models/multimodal/static_model.pkl")
+        if not model_file.exists():
+            model_file = Path("data/models/iraqi/static_model.pkl")
+
+        if model_file.exists():
+            m_time = model_file.stat().st_mtime
+            new_samples = 0
+            words_dir = Path("data/datasets/words")
+            if words_dir.exists():
+                for s_dir in words_dir.glob("*/samples/*"):
+                    try:
+                        if s_dir.is_dir() and s_dir.stat().st_mtime > m_time:
+                            new_samples += 1
+                    except Exception:
+                        pass
+            if new_samples > 0:
+                self._retrain_alert_btn.setText(f"⚡ {new_samples} new samples recorded — Retrain Model Now →")
+                self._retrain_alert_btn.setVisible(True)
+            else:
+                self._retrain_alert_btn.setVisible(False)
+        else:
+            self._retrain_alert_btn.setVisible(False)
 
     # ── Camera Operations ────────────────────────────────────────────────
 
@@ -766,8 +858,8 @@ class RecognitionTab(QWidget):
                 self._camera_combo.setCurrentIndex(0)
 
             if not self._is_streaming:
-                self._status_badge.setText("Ready to Connect")
-                self._status_badge.setStyleSheet("background-color: #14181f; color: #94a3b8; border: 1px solid #2b3441; border-radius: 4px; padding: 4px 10px;")
+                self._status_badge.setText("Camera Ready")
+                self._status_badge.setStyleSheet("background-color: #101419; color: #94A3B8; border: 1px solid #2B3442; border-radius: 4px; padding: 4px 10px;")
 
         self._camera_combo.blockSignals(False)
 
@@ -821,7 +913,7 @@ class RecognitionTab(QWidget):
         self._start_stop_btn.setObjectName("primaryButton")
         self._start_stop_btn.setStyleSheet("")
         self._status_badge.setText("Camera Ready")
-        self._status_badge.setStyleSheet("background-color: #14181f; color: #94a3b8; border: 1px solid #2b3441; border-radius: 4px; padding: 4px 10px;")
+        self._status_badge.setStyleSheet("background-color: #101419; color: #94A3B8; border: 1px solid #2B3442; border-radius: 4px; padding: 4px 10px;")
         self._fps_indicator.setText("FPS: --")
         self._preview.set_standby()
         self._decision_card.set_value("Ready")
@@ -894,14 +986,14 @@ class RecognitionTab(QWidget):
                 self._first_frame_rendered = True
                 self._status_badge.setText("● Live Streaming")
                 self._status_badge.setStyleSheet(
-                    "background-color: #064e3b; color: #10b981; border: 1px solid #047857; "
+                    "background-color: #064e3b; color: #10B981; border: 1px solid #047857; "
                     "border-radius: 4px; padding: 4px 10px; font-weight: 600;"
                 )
                 self._decision_card.set_value("Active")
 
         # Update FPS telemetry
         fps = 1000.0 / max(elapsed_ms, 1.0)
-        self._fps_indicator.setText(f"{fps:.1f} FPS · {elapsed_ms:.0f} ms")
+        self._fps_indicator.setText(f"{fps:.1f} FPS")
         self._fps_card.set_value(f"{fps:.1f}")
         self._latency_card.set_value(f"{elapsed_ms:.0f} ms")
 
@@ -1029,7 +1121,6 @@ class RecognitionTab(QWidget):
         """Update model status badge, caption, and vocabulary list button based on custom model state."""
         if self._engine_selector.currentData() != "custom":
             return
-        import json
         classes = []
         classes_path = Path("data/models/iraqi/classes.json")
         model_path = Path("data/models/iraqi/static_model.pkl")
@@ -1045,7 +1136,7 @@ class RecognitionTab(QWidget):
         if is_trained and classes:
             self._model_status_badge.setText(f"● Trained ({len(classes)} signs)")
             self._model_status_badge.setStyleSheet(
-                "color: #10b981; font-weight: 600; padding: 2px 8px; background: #064e3b; border-radius: 4px; font-size: 11px;"
+                "color: #10B981; font-weight: 600; padding: 4px 10px; background: #064e3b; border-radius: 4px; font-size: 11px;"
             )
             self._vocab_btn.setText(f"Custom Signs ({len(classes)})")
             self._caption_label.setText("جاهز للترجمة (مخصص)")
@@ -1056,7 +1147,7 @@ class RecognitionTab(QWidget):
         else:
             self._model_status_badge.setText("⚠️ Not Trained")
             self._model_status_badge.setStyleSheet(
-                "color: #f59e0b; font-weight: 600; padding: 2px 8px; background: #451a03; border-radius: 4px; font-size: 11px;"
+                "color: #F59E0B; font-weight: 600; padding: 4px 10px; background: #451a03; border-radius: 4px; font-size: 11px;"
             )
             self._vocab_btn.setText("Custom Signs (0)")
             self._caption_label.setText("النموذج المخصص غير مدرب")
@@ -1076,7 +1167,7 @@ class RecognitionTab(QWidget):
         if is_trained and classes:
             self._model_status_badge.setText(f"● Multimodal ({len(classes)} signs)")
             self._model_status_badge.setStyleSheet(
-                "color: #38bdf8; font-weight: 600; padding: 2px 8px; background: #0c4a6e; border-radius: 4px; font-size: 11px;"
+                "color: #38BDF8; font-weight: 600; padding: 4px 10px; background: #0c4a6e; border-radius: 4px; font-size: 11px;"
             )
             self._vocab_btn.setText(f"Multimodal ({len(classes)})")
             self._caption_label.setText("جاهز للترجمة (متعدد الوسائط)")
@@ -1087,7 +1178,7 @@ class RecognitionTab(QWidget):
         else:
             self._model_status_badge.setText("⚠️ Multimodal Not Trained")
             self._model_status_badge.setStyleSheet(
-                "color: #f59e0b; font-weight: 600; padding: 2px 8px; background: #451a03; border-radius: 4px; font-size: 11px;"
+                "color: #F59E0B; font-weight: 600; padding: 4px 10px; background: #451a03; border-radius: 4px; font-size: 11px;"
             )
             self._vocab_btn.setText("Multimodal (0)")
             self._caption_label.setText("النموذج المتعدد غير مدرب")
@@ -1108,7 +1199,7 @@ class RecognitionTab(QWidget):
         else:
             self._model_status_badge.setText("● Pretrained (502 signs)")
             self._model_status_badge.setStyleSheet(
-                "color: #10b981; font-weight: 600; padding: 2px 8px; background: #064e3b; border-radius: 4px; font-size: 11px;"
+                "color: #10B981; font-weight: 600; padding: 4px 10px; background: #064e3b; border-radius: 4px; font-size: 11px;"
             )
             self._vocab_btn.setText("502 Signs List")
             self._caption_label.setText("جاهز للترجمة")
@@ -1119,7 +1210,6 @@ class RecognitionTab(QWidget):
 
     def _open_vocab_dialog(self) -> None:
         if self._worker.active_engine == "multimodal":
-            import json
             classes = []
             classes_path = Path("data/models/multimodal/classes.json")
             if classes_path.exists():
@@ -1135,7 +1225,7 @@ class RecognitionTab(QWidget):
                     self,
                     "Multimodal Signs List",
                     "No multimodal signs trained yet.\n\n"
-                    "Please record multimodal samples (Hands + Face) in Dataset Studio and train the model in Model Training.",
+                    "Please record multimodal samples (Hands + Face) in Teach Signs and train the model in Train Model.",
                 )
                 return
 
@@ -1153,7 +1243,6 @@ class RecognitionTab(QWidget):
             return
 
         elif self._worker.active_engine == "custom":
-            import json
             classes = []
             classes_path = Path("data/models/iraqi/classes.json")
             if classes_path.exists():
@@ -1173,11 +1262,10 @@ class RecognitionTab(QWidget):
 
             if not classes:
                 from PySide6.QtWidgets import QMessageBox
-
                 QMessageBox.information(
                     self,
                     "Custom Signs List",
-                    "No custom signs trained yet.\n\nPlease collect sign samples in Dataset Studio and train the model in Model Training tab.",
+                    "No custom signs trained yet.\n\nPlease collect sign samples in Teach Signs and train the model in Train Model tab.",
                 )
                 return
 

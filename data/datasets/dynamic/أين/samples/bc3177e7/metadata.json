@@ -1,0 +1,17 @@
+{
+  "sample_id": "bc3177e7",
+  "gesture_type": "dynamic_gesture",
+  "gesture_label": "أين",
+  "dialect": "iraqi",
+  "timestamp": 1794063529.8270588,
+  "num_frames": 37,
+  "num_hands": 1,
+  "handedness": "Right",
+  "duration_seconds": 2.3979897499084473,
+  "fps": 15.429590556595423,
+  "has_motion": true,
+  "total_distance": 0.0,
+  "motion_energy": 0.0,
+  "schema_version": "v1_single_hand",
+  "modality_mode": "one_hand"
+}

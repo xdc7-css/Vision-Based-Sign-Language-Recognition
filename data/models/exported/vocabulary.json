@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "dialect": "iraqi",
+    "model_type": "mlp",
+    "accuracy": 0.9964476021314387,
+    "classes": [
+      "آسف",
+      "ا",
+      "السلام_عليكم",
+      "لا",
+      "نعم",
+      "نوم"
+    ]
+  },
+  "gestures": {
+    "آسف": {
+      "arabic": "آسف",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_آسف": {
+      "arabic": "آسف",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "ا": {
+      "arabic": "ا",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_ا": {
+      "arabic": "ا",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "السلام_عليكم": {
+      "arabic": "السلام عليكم",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_السلام_عليكم": {
+      "arabic": "السلام عليكم",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "لا": {
+      "arabic": "لا",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_لا": {
+      "arabic": "لا",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "نعم": {
+      "arabic": "نعم",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_نعم": {
+      "arabic": "نعم",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "نوم": {
+      "arabic": "نوم",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_نوم": {
+      "arabic": "نوم",
+      "type": "static",
+      "threshold": 0.65
+    }
+  }
+}
