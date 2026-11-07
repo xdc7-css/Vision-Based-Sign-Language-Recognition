@@ -569,6 +569,8 @@ class RecognitionTab(QWidget):
     def _refresh_camera_list(self) -> None:
         """Enumerate system cameras via DirectShow COM and populate dropdown."""
         current_sel = self._camera_combo.currentData()
+        if current_sel is None and hasattr(self._state, "selected_camera_index"):
+            current_sel = self._state.selected_camera_index
         self._camera_combo.blockSignals(True)
         self._camera_combo.clear()
 
@@ -671,6 +673,10 @@ class RecognitionTab(QWidget):
         """Handle immediate camera switching from dropdown."""
         if index < 0:
             return
+        idx = self._camera_combo.currentData()
+        if idx is not None and hasattr(self._state, "selected_camera_index"):
+            self._state.selected_camera_index = idx
+
         if self._is_streaming:
             self._stop_camera()
             QTimer.singleShot(100, self._start_camera)
@@ -772,7 +778,7 @@ class RecognitionTab(QWidget):
                 self._history_list.insertItem(0, item_text)
                 if self._history_list.count() > 50:
                     self._history_list.takeItem(self._history_list.count() - 1)
-        elif karsl_res and not karsl_res.hand_detected:
+        else:
             self._conf_bar.setValue(0)
             self._conf_badge.setText("Waiting for sign...")
 
@@ -842,7 +848,10 @@ class RecognitionTab(QWidget):
         self._worker.mirror = checked
 
     def _on_engine_changed(self, index: int) -> None:
-        self._worker.active_engine = self._engine_selector.currentData()
+        engine = self._engine_selector.currentData()
+        self._worker.active_engine = engine
+        if engine == "custom" and self._dialect_manager:
+            self._dialect_manager.reload_dialect()
 
     def _open_vocab_dialog(self) -> None:
         labels_path = Path("data/models/karsl/labels.json")

@@ -26,6 +26,7 @@ from src.application.state import AppState
 from src.domain.entities import ModelInfo
 from src.infrastructure.dialect_manager import DialectManager
 from src.infrastructure.recognition.hybrid_pipeline import HybridRecognitionPipeline
+from src.models.train_dynamic import inspect_dynamic_dataset, train_dynamic_model
 from src.models.train_static import inspect_dataset, train_static_model
 from src.presentation.widgets import SectionHeader, StatCard
 
@@ -47,6 +48,8 @@ class TrainingWorker(QThread):
         learning_rate: float,
         val_split: float,
         augment: bool,
+        is_dynamic: bool = False,
+        model_type: str = "mlp",
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -58,6 +61,8 @@ class TrainingWorker(QThread):
         self.learning_rate = learning_rate
         self.val_split = val_split
         self.augment = augment
+        self.is_dynamic = is_dynamic
+        self.model_type = model_type
         self._is_cancelled = False
         self._start_time = 0.0
 
@@ -74,18 +79,41 @@ class TrainingWorker(QThread):
             self.progress_updated.emit(ep, total, loss, val_loss, elapsed)
 
         try:
-            result = train_static_model(
-                dataset_path=self.dataset_path,
-                output_dir=self.output_dir,
-                model_types=["mlp"],
-                epochs=self.epochs,
-                batch_size=self.batch_size,
-                learning_rate=self.learning_rate,
-                val_split=self.val_split,
-                augment=self.augment,
-                dialect=self.dialect,
-                progress_callback=on_progress,
-            )
+            if self.is_dynamic:
+                arch = "lstm"
+                if "gru" in self.model_type.lower():
+                    arch = "gru"
+                elif "transformer" in self.model_type.lower():
+                    arch = "transformer"
+
+                result = train_dynamic_model(
+                    dataset_path=self.dataset_path,
+                    output_dir=self.output_dir,
+                    architectures=[arch],
+                    epochs=self.epochs,
+                    augment=self.augment,
+                    dialect=self.dialect,
+                    progress_callback=on_progress,
+                )
+            else:
+                mt = "mlp"
+                if "svm" in self.model_type.lower():
+                    mt = "svm"
+                elif "rf" in self.model_type.lower() or "forest" in self.model_type.lower():
+                    mt = "rf"
+
+                result = train_static_model(
+                    dataset_path=self.dataset_path,
+                    output_dir=self.output_dir,
+                    model_types=[mt],
+                    epochs=self.epochs,
+                    batch_size=self.batch_size,
+                    learning_rate=self.learning_rate,
+                    val_split=self.val_split,
+                    augment=self.augment,
+                    dialect=self.dialect,
+                    progress_callback=on_progress,
+                )
             self.finished_success.emit(result)
         except Exception as e:
             tb = traceback.format_exc()
@@ -286,9 +314,39 @@ class ModelTrainingTab(QWidget):
     def _connect_signals(self) -> None:
         self._train_btn.clicked.connect(self._inspect_and_train)
         self._stop_btn.clicked.connect(self._stop_training)
+        self._export_btn.clicked.connect(self._export_model)
         self._epochs_spin.valueChanged.connect(self._on_epochs_changed)
         if hasattr(self._state, "active_dialect_changed"):
             self._state.active_dialect_changed.connect(lambda _: self._sync_active_dialect())
+
+    def _export_model(self) -> None:
+        """Export trained model checkpoint and vocabulary manifest for deployment."""
+        target_dialect = self._dialect_combo.currentText().lower()
+        model_dir = Path(f"data/models/{target_dialect}")
+        export_dir = Path("data/models/exported")
+        export_dir.mkdir(parents=True, exist_ok=True)
+
+        copied = []
+        for f in model_dir.glob("*.*"):
+            if f.suffix in [".pkl", ".json", ".pt", ".onnx"]:
+                import shutil
+                dst = export_dir / f.name
+                shutil.copy2(f, dst)
+                copied.append(f.name)
+
+        if copied:
+            QMessageBox.information(
+                self,
+                "تم تصدير النموذج",
+                f"تم تصدير ملفات النموذج بنجاح إلى:\n{export_dir.resolve()}\n\nالملفات المصدرة:\n"
+                + "\n".join(f"  • {name}" for name in copied),
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "لا توجد نماذج للتصدير",
+                f"لم يتم العثور على أي نماذج مدربة في:\n{model_dir}\nيرجى تدريب النموذج أولاً.",
+            )
 
     def _on_epochs_changed(self, value: int) -> None:
         self._epoch_progress.setMaximum(value)
@@ -304,8 +362,11 @@ class ModelTrainingTab(QWidget):
             QMessageBox.warning(self, "مجلد البيانات غير موجود", f"المجلد المطلوب {dataset_base} غير موجود.")
             return
 
-        # Detailed inspection
-        inspection = inspect_dataset(dataset_base)
+        # Detailed inspection (dynamic vs static)
+        if is_dynamic:
+            inspection = inspect_dynamic_dataset(dataset_base)
+        else:
+            inspection = inspect_dataset(dataset_base)
 
         report_lines = [
             f"📊 حالة مجموعة البيانات ({dataset_base.name}):",
@@ -381,6 +442,8 @@ class ModelTrainingTab(QWidget):
             learning_rate=learning_rate,
             val_split=val_split,
             augment=augment,
+            is_dynamic=is_dynamic,
+            model_type=self._model_type.currentText(),
             parent=self,
         )
         self._worker.progress_updated.connect(self._on_training_progress)

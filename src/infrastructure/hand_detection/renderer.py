@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import cv2
 import numpy as np
@@ -78,6 +78,15 @@ class HandRenderer:
             output = self.draw_bounding_box(output, hand)
 
         return output
+
+    def render(self, image: np.ndarray, result: Any) -> np.ndarray:
+        """Alias for draw to support both HandDetectionResult and list[Hand]."""
+        if isinstance(result, HandDetectionResult):
+            return self.draw(image, result)
+        elif isinstance(result, list):
+            res_obj = HandDetectionResult(hands=result, image_width=image.shape[1], image_height=image.shape[0], fps=0.0)
+            return self.draw(image, res_obj)
+        return image.copy()
 
     def draw_landmarks(self, image: np.ndarray, hand: Hand) -> np.ndarray:
         """Draw landmark dots for one hand (no skeleton)."""

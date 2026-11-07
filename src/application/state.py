@@ -42,6 +42,7 @@ class AppState(QObject):
         self._current_fps: float = 0.0
         self._overlay_visible: bool = False
         self._last_caption: str = ""
+        self._selected_camera_index: Optional[int] = None
 
     @property
     def cameras(self) -> list[CameraInfo]:
@@ -132,6 +133,14 @@ class AppState(QObject):
     def last_caption(self, value: str) -> None:
         self._last_caption = value
         self.caption_updated.emit(value)
+
+    @property
+    def selected_camera_index(self) -> Optional[int]:
+        return self._selected_camera_index
+
+    @selected_camera_index.setter
+    def selected_camera_index(self, value: Optional[int]) -> None:
+        self._selected_camera_index = value
 
     def log(self, level: str, message: str) -> None:
         self.log_message.emit(level, message)
