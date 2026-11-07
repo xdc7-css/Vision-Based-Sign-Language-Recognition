@@ -31,6 +31,7 @@ from src.infrastructure.dialect_manager import DialectManager
 from src.infrastructure.recognition.hybrid_pipeline import HybridRecognitionPipeline
 from src.models.train_dynamic import inspect_dynamic_dataset, train_dynamic_model
 from src.models.train_static import inspect_dataset, train_static_model
+from src.models.train_multimodal import inspect_multimodal_dataset, train_multimodal_model
 from src.presentation.widgets import SectionHeader, StatCard
 
 
@@ -84,7 +85,19 @@ class TrainingWorker(QThread):
             self.progress_updated.emit(ep, total, loss, val_loss, elapsed)
 
         try:
-            if self.is_dynamic:
+            if "multimodal" in self.model_type.lower():
+                result = train_multimodal_model(
+                    dataset_path=self.dataset_path,
+                    output_dir=self.output_dir,
+                    model_type="mlp" if "mlp" in self.model_type.lower() else "svm",
+                    epochs=self.epochs,
+                    batch_size=self.batch_size,
+                    learning_rate=self.learning_rate,
+                    val_split=self.val_split,
+                    progress_callback=on_progress,
+                    allowed_classes=self.allowed_classes,
+                )
+            elif self.is_dynamic:
                 arch = "lstm"
                 if "gru" in self.model_type.lower():
                     arch = "gru"
@@ -191,7 +204,12 @@ class ModelTrainingTab(QWidget):
         model_form = QFormLayout(model_group)
 
         self._model_type = QComboBox()
-        self._model_type.addItems(["Static Gesture (MLP / ANN)", "Dynamic Gesture (LSTM)", "Alphabet (CTC)"])
+        self._model_type.addItems([
+            "Multimodal Iraqi — Hands + Face (MLP)",
+            "Static Gesture (MLP / ANN - Legacy)",
+            "Dynamic Gesture (LSTM)",
+            "Alphabet (CTC)",
+        ])
         model_form.addRow("Architecture:", self._model_type)
 
         self._dialect_combo = QComboBox()
@@ -349,6 +367,35 @@ class ModelTrainingTab(QWidget):
         if not hasattr(self, "_sync_status_badge"):
             return
         try:
+            active_registry = {c.name.replace(" ", "_") for c in self._registry.list_active_classes()}
+
+            # Handle Multimodal Model Sync Status
+            if "multimodal" in self._model_type.currentText().lower():
+                classes_path = Path("data/models/multimodal/classes.json")
+                if not classes_path.exists():
+                    self._sync_status_badge.setText("⚠️ Multimodal Not Trained")
+                    self._sync_status_badge.setStyleSheet(
+                        "background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
+                    )
+                    return
+                with open(classes_path, "r", encoding="utf-8") as f:
+                    trained_classes = set(json.load(f))
+                inspection = inspect_multimodal_dataset("data/datasets/words", allowed_classes=active_registry)
+                qualifying = set(inspection["accepted_classes"].keys())
+                if trained_classes == qualifying:
+                    self._sync_status_badge.setText(f"✅ Multimodal Synchronized ({len(trained_classes)} classes)")
+                    self._sync_status_badge.setStyleSheet(
+                        "background-color: #062b1a; color: #10b981; border: 1px solid #065f46; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
+                    )
+                else:
+                    self._sync_status_badge.setText(
+                        f"⚠️ Retraining Recommended ({len(qualifying)} active vs {len(trained_classes)} in checkpoint)"
+                    )
+                    self._sync_status_badge.setStyleSheet(
+                        "background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
+                    )
+                return
+
             target_dialect = self._dialect_combo.currentText().lower()
             classes_path = Path(f"data/models/{target_dialect}/classes.json")
             if not classes_path.exists():
@@ -362,7 +409,6 @@ class ModelTrainingTab(QWidget):
                 trained_classes = set(json.load(f))
 
             dataset_base = Path("data/datasets/words")
-            active_registry = {c.name.replace(" ", "_") for c in self._registry.list_active_classes()}
             inspection = inspect_dataset(dataset_base, allowed_classes=active_registry)
             qualifying = set(inspection["accepted_classes"].keys())
 
@@ -416,6 +462,7 @@ class ModelTrainingTab(QWidget):
 
     def _inspect_and_train(self) -> None:
         """Inspect dataset classes, display qualifying vs excluded classes, and launch training."""
+        is_multimodal = "Multimodal" in self._model_type.currentText()
         is_dynamic = "Dynamic" in self._model_type.currentText()
         target_dialect = self._dialect_combo.currentText().lower()
         dataset_base = Path("data/datasets/dynamic") if is_dynamic else Path("data/datasets/words")
@@ -426,45 +473,92 @@ class ModelTrainingTab(QWidget):
 
         active_registry = {c.name.replace(" ", "_") for c in self._registry.list_active_classes()}
 
-        # Detailed inspection (dynamic vs static)
-        if is_dynamic:
+        # Detailed inspection (multimodal vs dynamic vs static legacy)
+        if is_multimodal:
+            inspection = inspect_multimodal_dataset(dataset_base, allowed_classes=active_registry)
+            report_lines = [
+                f"📊 حالة مجموعة البيانات المتعددة الوسائط ({dataset_base.name} - أيدي + وجه):",
+                f"  • إجمالي الفئات المفحوصة: {inspection['total_classes']}",
+                "",
+                "✅ الفئات المستوفية للشروط للتدريب المتعدد الوسائط (عينتان فأكثر):",
+            ]
+            if inspection["accepted_classes"]:
+                for cls_name, cnt in sorted(inspection["accepted_classes"].items()):
+                    report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} عينة متعددة الوسائط (مقبولة للتدريب)")
+            else:
+                report_lines.append("    (لا توجد أي فئة تحوي عينات متعددة الوسائط كافية)")
+
+            report_lines.append("")
+            report_lines.append("ℹ️ فئات تحوي عينات بصيغة Legacy v1 (أحادية اليد فقط - يلزم تسجيل عينات جديدة بالأيدي والوجه):")
+            for cls_name, cnt in sorted(inspection.get("legacy_only_classes", {}).items()):
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} عينة بصيغة Legacy أحادية اليد")
+            for cls_name, cnt in sorted(inspection.get("empty_classes", {}).items()):
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: 0 عينات")
+
+        elif is_dynamic:
             inspection = inspect_dynamic_dataset(dataset_base, allowed_classes=active_registry)
+            report_lines = [
+                f"📊 حالة مجموعة البيانات الديناميكية ({dataset_base.name}):",
+                f"  • إجمالي الفئات المفحوصة: {inspection['total_classes']}",
+                "",
+                "✅ الفئات المقبولة والمستوفية للشروط (عينتان فأكثر):",
+            ]
+            if inspection["accepted_classes"]:
+                for cls_name, cnt in sorted(inspection["accepted_classes"].items()):
+                    report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} تسلسل حركة (مقبولة للتدريب)")
+            else:
+                report_lines.append("    (لا توجد أي فئة مستوفية للحد الأدنى)")
+
+            report_lines.append("")
+            report_lines.append("⚠️ الفئات المستبعدة (فارغة أو غير كافية):")
+            for cls_name, cnt in sorted(inspection["insufficient_classes"].items()):
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} تسلسل حركة فقط (مستبعدة)")
+            for cls_name, cnt in sorted(inspection["empty_classes"].items()):
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: 0 تسلسلات")
+
         else:
             inspection = inspect_dataset(dataset_base, allowed_classes=active_registry)
+            report_lines = [
+                f"📊 حالة مجموعة البيانات ({dataset_base.name}):",
+                f"  • إجمالي الفئات المفحوصة: {inspection['total_classes']}",
+                "",
+                "✅ الفئات المقبولة والمستوفية للشروط (عينتان فأكثر):",
+            ]
+            if inspection["accepted_classes"]:
+                for cls_name, cnt in sorted(inspection["accepted_classes"].items()):
+                    report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} عينة (مقبولة للتدريب)")
+            else:
+                report_lines.append("    (لا توجد أي فئة مستوفية للحد الأدنى)")
 
-        report_lines = [
-            f"📊 حالة مجموعة البيانات ({dataset_base.name}):",
-            f"  • إجمالي الفئات المفحوصة: {inspection['total_classes']}",
-            "",
-            "✅ الفئات المقبولة والمستوفية للشروط (عينتان فأكثر):",
-        ]
-
-        if inspection["accepted_classes"]:
-            for cls_name, cnt in sorted(inspection["accepted_classes"].items()):
-                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} عينة (مقبولة للتدريب)")
-        else:
-            report_lines.append("    (لا توجد أي فئة مستوفية للحد الأدنى)")
-
-        report_lines.append("")
-        report_lines.append("⚠️ الفئات المستبعدة (فارغة أو غير كافية):")
-        for cls_name, cnt in sorted(inspection["insufficient_classes"].items()):
-            report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} عينة فقط (مستبعدة — الحد الأدنى عينتان للتقسيم)")
-        for cls_name, cnt in sorted(inspection["empty_classes"].items()):
-            report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: 0 عينات (مستبعدة — لا توجد عينات مسجلة)")
+            report_lines.append("")
+            report_lines.append("⚠️ الفئات المستبعدة (فارغة أو غير كافية):")
+            for cls_name, cnt in sorted(inspection["insufficient_classes"].items()):
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: {cnt} عينة فقط (مستبعدة — الحد الأدنى عينتان للتقسيم)")
+            for cls_name, cnt in sorted(inspection["empty_classes"].items()):
+                report_lines.append(f"    - «{cls_name.replace('_', ' ')}»: 0 عينات (مستبعدة — لا توجد عينات مسجلة)")
 
         report_text = "\n".join(report_lines)
         self._dataset_info_label.setText(report_text)
 
         if not inspection["is_trainable"]:
-            QMessageBox.warning(
-                self,
-                "بيانات التدريب غير كافية",
-                f"{report_text}\n\n"
-                f"❌ لا يمكن بدء تدريب المصنف:\n"
-                f"يتطلب النموذج فئتين صالحتين على الأقل (كل فئة تحوي عينتين فأكثر لتقسيم التدريب والتحقق).\n"
-                f"الفئات المقبولة حالياً: {len(inspection['accepted_classes'])} فئة.\n\n"
-                f"يرجى تسجيل عينات إضافية في تبويب Dataset قبل بدء التدريب."
-            )
+            if is_multimodal:
+                fail_msg = (
+                    f"{report_text}\n\n"
+                    f"❌ لا يمكن بدء تدريب المصنف المتعدد الوسائط:\n"
+                    f"يتطلب النموذج تدريب عينتين على الأقل لكل فئة بصيغة الأيدي + الوجه (v2_multimodal).\n"
+                    f"الفئات التي تحوي عينات متعددة الوسائط مستوفية حالياً: {len(inspection['accepted_classes'])} فئة.\n\n"
+                    f"💡 العينات المسجلة مسبقاً (1037 عينة) هي بصيغة Legacy أحادية اليد ولا تحتوي على معالم الوجه.\n"
+                    f"يرجى فتح تبويب Dataset Studio، واختيار نمط «Two Hands + Face»، وتسجيل عينات جديدة بالأيدي والوجه قبل تدريب هذا النموذج."
+                )
+            else:
+                fail_msg = (
+                    f"{report_text}\n\n"
+                    f"❌ لا يمكن بدء تدريب المصنف:\n"
+                    f"يتطلب النموذج فئتين صالحتين على الأقل (كل فئة تحوي عينتين فأكثر لتقسيم التدريب والتحقق).\n"
+                    f"الفئات المقبولة حالياً: {len(inspection['accepted_classes'])} فئة.\n\n"
+                    f"يرجى تسجيل عينات إضافية في تبويب Dataset قبل بدء التدريب."
+                )
+            QMessageBox.warning(self, "بيانات التدريب غير كافية", fail_msg)
             return
 
         # Prepare parameters from UI
@@ -480,7 +574,10 @@ class ModelTrainingTab(QWidget):
             self._aug_jitter.isChecked(),
         ])
 
-        out_dir = Path(f"data/models/{target_dialect}")
+        if is_multimodal:
+            out_dir = Path("data/models/multimodal")
+        else:
+            out_dir = Path(f"data/models/{target_dialect}")
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # UI state for active training
@@ -512,7 +609,9 @@ class ModelTrainingTab(QWidget):
             parent=self,
         )
         self._worker.progress_updated.connect(self._on_training_progress)
-        self._worker.finished_success.connect(lambda res: self._on_training_success(res, report_text, target_dialect))
+        self._worker.finished_success.connect(
+            lambda res: self._on_training_success(res, report_text, "multimodal" if is_multimodal else target_dialect)
+        )
         self._worker.finished_error.connect(lambda err, tb: self._on_training_error(err, tb, report_text))
         self._worker.start()
 

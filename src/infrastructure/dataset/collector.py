@@ -46,9 +46,19 @@ class CaptureSession:
     start_time: float = 0.0
     is_recording: bool = False
 
+    # Multimodal additions
+    schema_version: str = "v1_single_hand"
+    modality_mode: str = "one_hand"
+    multimodal_features: list[np.ndarray] = field(default_factory=list)
+    has_face: bool = False
+    has_pose: bool = False
+    has_left_hand: bool = False
+    has_right_hand: bool = False
+
     def start(self) -> None:
         self.frames.clear()
         self.landmarks.clear()
+        self.multimodal_features.clear()
         self.motion_vectors.clear()
         self.trajectories.clear()
         self.start_time = time.time()
@@ -84,7 +94,32 @@ class CaptureSession:
             frame_data["confidence"] = primary_hand.confidence
 
         self.frames.append(frame_data)
+    def add_multimodal_frame(self, mm_frame: Any, feature_vec: np.ndarray, mode: str = "two_hands_face") -> None:
+        """Add a multimodal observation vector to this session."""
+        if not self.is_recording:
+            return
 
+        self.schema_version = "v2_multimodal"
+        self.modality_mode = mode
+        self.multimodal_features.append(feature_vec.astype(np.float32))
+
+        if getattr(mm_frame, "has_left_hand", False):
+            self.has_left_hand = True
+        if getattr(mm_frame, "has_right_hand", False):
+            self.has_right_hand = True
+        if getattr(mm_frame, "has_face", False):
+            self.has_face = True
+        if getattr(mm_frame, "has_pose", False):
+            self.has_pose = True
+
+        f_meta = {
+            "timestamp": time.time() - self.start_time,
+            "has_left": getattr(mm_frame, "has_left_hand", False),
+            "has_right": getattr(mm_frame, "has_right_hand", False),
+            "has_face": getattr(mm_frame, "has_face", False),
+            "has_pose": getattr(mm_frame, "has_pose", False),
+        }
+        self.frames.append(f_meta)
     def add_motion(self, vx: float, vy: float, speed: float, direction: float) -> None:
         self.motion_vectors.append({
             "vx": vx,
@@ -168,7 +203,7 @@ class DatasetCollector:
     def save_sample(self, session: Optional[CaptureSession] = None) -> Optional[Path]:
         """Save the current (or specified) session to disk."""
         session = session or self._session or getattr(self, '_last_session', None)
-        if session is None or not session.landmarks:
+        if session is None or (not session.landmarks and not session.multimodal_features):
             return None
 
         sample_id = str(uuid.uuid4())[:8]
@@ -178,8 +213,13 @@ class DatasetCollector:
         sample_dir = self._base_dir / type_dir / label / "samples" / sample_id
         sample_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save landmarks (3D array: frames × 21 × 3)
-        if session.landmarks:
+        is_multimodal = bool(session.multimodal_features)
+
+        # Save landmarks
+        if is_multimodal:
+            landmarks_array = np.stack(session.multimodal_features, axis=0)
+            np.save(sample_dir / "landmarks.npy", landmarks_array)
+        elif session.landmarks:
             landmarks_array = np.stack(session.landmarks, axis=0)
             np.save(sample_dir / "landmarks.npy", landmarks_array)
 
@@ -205,14 +245,20 @@ class DatasetCollector:
             "gesture_label": meta.gesture_label,
             "dialect": meta.dialect,
             "timestamp": meta.timestamp,
-            "num_frames": meta.num_frames,
-            "num_hands": meta.num_hands,
+            "num_frames": len(session.multimodal_features) if is_multimodal else meta.num_frames,
+            "num_hands": (1 if session.has_left_hand else 0) + (1 if session.has_right_hand else 0) if is_multimodal else meta.num_hands,
             "handedness": meta.handedness,
             "duration_seconds": meta.duration_seconds,
             "fps": meta.fps,
             "has_motion": meta.has_motion,
             "total_distance": meta.total_distance,
             "motion_energy": meta.motion_energy,
+            "schema_version": "v2_multimodal" if is_multimodal else "v1_single_hand",
+            "modality_mode": session.modality_mode if is_multimodal else "one_hand",
+            "has_face": session.has_face if is_multimodal else False,
+            "has_pose": session.has_pose if is_multimodal else False,
+            "has_left_hand": session.has_left_hand if is_multimodal else False,
+            "has_right_hand": session.has_right_hand if is_multimodal else True,
         }
         with open(sample_dir / "metadata.json", "w", encoding="utf-8") as f:
             json.dump(meta_json, f, indent=2, ensure_ascii=False)
@@ -278,14 +324,15 @@ class DatasetCollector:
             motion_energy += m["speed"] ** 2
 
         duration = 0.0
-        if session.frames:
-            duration = session.frames[-1]["timestamp"] - session.frames[0]["timestamp"]
+        if session.frames and "timestamp" in session.frames[0]:
+            duration = session.frames[-1].get("timestamp", 0.0) - session.frames[0].get("timestamp", 0.0)
 
         fps = len(session.frames) / max(duration, 0.001)
 
+        g_type = session.gesture_type.name.lower() if hasattr(session.gesture_type, "name") else str(session.gesture_type).lower()
         return SampleMetadata(
             sample_id=str(uuid.uuid4())[:8],
-            gesture_type=session.gesture_type.name.lower(),
+            gesture_type=g_type,
             gesture_label=session.gesture_label,
             dialect=session.dialect,
             timestamp=session.start_time,

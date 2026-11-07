@@ -24,17 +24,27 @@ from PySide6.QtWidgets import (
     QSplitter,
     QVBoxLayout,
     QWidget,
+    QCheckBox,
 )
 
 from src.application.state import AppState
 from src.application.use_cases import VideoSourceUseCases
 from src.domain.entities import VideoSourceType
+from src.domain.multimodal import (
+    MULTIMODAL_SCHEMA_VERSION,
+    ModalityConfig,
+    ModalityMode,
+    MultimodalFrame,
+)
 from src.infrastructure.camera_service import OpenCVCameraService
+from src.domain.hand import HandDetectionResult
 from src.infrastructure.dataset.collector import DatasetCollector
 from src.infrastructure.dataset.gesture_registry import GestureRegistry
 from src.infrastructure.dataset.organizer import DatasetOrganizer
 from src.infrastructure.hand_detection.detector import HandDetector, HandDetectorConfig
-from src.infrastructure.hand_detection.renderer import HandRenderer
+from src.infrastructure.vision.feature_extractor import MultimodalFeatureExtractor
+from src.infrastructure.vision.multimodal_detector import MultimodalDetector
+from src.infrastructure.vision.multimodal_renderer import MultimodalRenderer
 from src.presentation.dialogs.dataset_dialogs import (
     AddClassDialog,
     DeleteClassDialog,
@@ -49,6 +59,7 @@ class DatasetCollectionTab(QWidget):
 
     Supports:
     - DirectShow Camera Selection (HD Webcam, e2eSoft iVCam, USB Cameras)
+    - Multimodal Dual-Hand, Face, and Upper-Body Pose tracking and capture
     - Static Sign Sample Capture (single & multi-sample burst with progress and cancellation)
     - Dynamic Temporal Sequence Recording (MediaPipe landmark sequence collection)
     - Comprehensive Class & Sample Management (Add, Edit, Delete, Sample Inspector, Stats)
@@ -71,17 +82,32 @@ class DatasetCollectionTab(QWidget):
         self._organizer = DatasetOrganizer()
         self._registry = GestureRegistry()
         self._camera_service = OpenCVCameraService()
-        self._detector = HandDetector(HandDetectorConfig(
+
+        # Multimodal Tracking & Feature Services
+        self._mm_config = ModalityConfig(
+            mode=ModalityMode.TWO_HANDS_FACE,
+            enable_left_hand=True,
+            enable_right_hand=True,
+            enable_face=True,
+            enable_pose=False,
+            mirror_camera=True,
+        )
+        self._detector = MultimodalDetector(self._mm_config)
+        self._renderer = MultimodalRenderer()
+        self._extractor = MultimodalFeatureExtractor(ModalityMode.TWO_HANDS_FACE)
+
+        # Legacy Hand detector for single-hand compatibility
+        self._legacy_detector = HandDetector(HandDetectorConfig(
             min_detection_confidence=0.30,
             min_tracking_confidence=0.30,
         ))
-        self._renderer = HandRenderer()
 
         # Capture & streaming state
         self._is_streaming = False
         self._first_frame_rendered = False
         self._last_frame: Optional[np.ndarray] = None
         self._last_detection = None
+        self._last_mm_frame: Optional[MultimodalFrame] = None
         self._last_fps_time = time.perf_counter()
         self._fps_counter = 0
 
@@ -194,13 +220,17 @@ class DatasetCollectionTab(QWidget):
 
         left_layout.addLayout(cam_status_row)
 
-        # Hands & Readiness Stat Row
+        # Multimodal Tracking Telemetry Row (Left Hand, Right Hand, Face, Pose)
         stats_row = QHBoxLayout()
-        stats_row.setSpacing(8)
-        self._hands_card = StatCard("Hands Detected", "0")
-        stats_row.addWidget(self._hands_card)
-        self._readiness_card = StatCard("Hand Readiness", "Waiting for Camera")
-        stats_row.addWidget(self._readiness_card)
+        stats_row.setSpacing(6)
+        self._lh_card = StatCard("Left Hand", "Missing")
+        stats_row.addWidget(self._lh_card)
+        self._rh_card = StatCard("Right Hand", "Missing")
+        stats_row.addWidget(self._rh_card)
+        self._face_card = StatCard("Face", "Missing")
+        stats_row.addWidget(self._face_card)
+        self._pose_card = StatCard("Pose", "Disabled")
+        stats_row.addWidget(self._pose_card)
         left_layout.addLayout(stats_row)
 
         # Capture Control Card
@@ -216,6 +246,40 @@ class DatasetCollectionTab(QWidget):
         """)
         capture_layout = QVBoxLayout(capture_controls)
         capture_layout.setSpacing(8)
+
+        # Modality selector and visual toggles row
+        modality_bar = QHBoxLayout()
+        modality_bar.setSpacing(8)
+
+        mod_lbl = QLabel("Modality:")
+        mod_lbl.setStyleSheet("font-weight: 600; color: #94a3b8; font-size: 11px;")
+        modality_bar.addWidget(mod_lbl)
+
+        self._modality_combo = QComboBox()
+        self._modality_combo.addItem("Two Hands + Face (Standard)", "two_hands_face")
+        self._modality_combo.addItem("Two Hands Only", "two_hands")
+        self._modality_combo.addItem("Two Hands + Face + Pose", "two_hands_face_pose")
+        self._modality_combo.addItem("One Hand (Legacy v1)", "one_hand")
+        self._modality_combo.currentIndexChanged.connect(self._on_modality_changed)
+        modality_bar.addWidget(self._modality_combo, stretch=1)
+
+        # Landmark display toggles
+        self._chk_show_hands = QCheckBox("Hands")
+        self._chk_show_hands.setChecked(True)
+        self._chk_show_hands.toggled.connect(self._on_render_toggles_changed)
+        modality_bar.addWidget(self._chk_show_hands)
+
+        self._chk_show_face = QCheckBox("Face")
+        self._chk_show_face.setChecked(True)
+        self._chk_show_face.toggled.connect(self._on_render_toggles_changed)
+        modality_bar.addWidget(self._chk_show_face)
+
+        self._chk_show_pose = QCheckBox("Pose")
+        self._chk_show_pose.setChecked(False)
+        self._chk_show_pose.toggled.connect(self._on_render_toggles_changed)
+        modality_bar.addWidget(self._chk_show_pose)
+
+        capture_layout.addLayout(modality_bar)
 
         # Capture buttons row
         btn_row = QHBoxLayout()
@@ -573,9 +637,41 @@ class DatasetCollectionTab(QWidget):
         self._preview.set_standby()
         self._status_badge.setText("Camera Ready")
         self._status_badge.setStyleSheet("background-color: #14181f; color: #94a3b8; border: 1px solid #2b3441; border-radius: 4px; padding: 3px 8px;")
-        self._readiness_card.set_value("Camera Stopped")
-        self._hands_card.set_value("0")
+        self._lh_card.set_value("Missing")
+        self._rh_card.set_value("Missing")
+        self._face_card.set_value("Missing")
+        self._pose_card.set_value("Disabled" if not self._chk_show_pose.isChecked() else "Missing")
         self._fps_indicator.setText("FPS: --")
+
+    def _on_render_toggles_changed(self) -> None:
+        """Handle visual checkbox toggles for landmarks."""
+        self._renderer.config.show_hands = self._chk_show_hands.isChecked()
+        self._renderer.config.show_face = self._chk_show_face.isChecked()
+        self._renderer.config.show_pose = self._chk_show_pose.isChecked()
+        self._detector.set_pose_enabled(self._chk_show_pose.isChecked())
+        if not self._chk_show_pose.isChecked():
+            self._pose_card.set_value("⊘ Disabled")
+
+    def _on_modality_changed(self, idx: int) -> None:
+        """Handle user changing modality capture mode."""
+        mode_str = self._modality_combo.currentData()
+        if mode_str:
+            try:
+                self._mm_config.mode = ModalityMode(mode_str)
+                self._detector.config.mode = ModalityMode(mode_str)
+            except Exception:
+                pass
+        if mode_str == "two_hands_face_pose":
+            self._chk_show_pose.setChecked(True)
+            self._detector.set_pose_enabled(True)
+        elif mode_str == "one_hand":
+            self._chk_show_face.setChecked(False)
+            self._chk_show_pose.setChecked(False)
+            self._detector.set_pose_enabled(False)
+        elif mode_str in ("two_hands_face", "two_hands"):
+            self._chk_show_hands.setChecked(True)
+            self._chk_show_face.setChecked(mode_str == "two_hands_face")
+        self._on_render_toggles_changed()
 
     def _on_camera_combo_changed(self, index: int) -> None:
         """Handle user changing camera selection in dropdown."""
@@ -612,7 +708,7 @@ class DatasetCollectionTab(QWidget):
             self._process_frame_data(raw_bgr)
 
     def _process_frame_data(self, frame: np.ndarray) -> None:
-        """Run MediaPipe hand detection, render visual skeleton, and update state."""
+        """Run multimodal detection, render visual skeleton, and update state."""
         self._last_frame = frame
 
         # Calculate FPS
@@ -625,18 +721,31 @@ class DatasetCollectionTab(QWidget):
             self._fps_counter = 0
             self._last_fps_time = now
 
-        # Run hand detection on RGB frame
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Run multimodal detection
         try:
-            result = self._detector.detect(frame_rgb)
-            self._last_detection = result
+            mm_frame = self._detector.detect(frame)
+            self._last_mm_frame = mm_frame
+
+            # Populate legacy detection object for compatibility
+            hands_list = []
+            if mm_frame.left_hand:
+                hands_list.append(mm_frame.left_hand)
+            if mm_frame.right_hand:
+                hands_list.append(mm_frame.right_hand)
+            self._last_detection = HandDetectionResult(
+                hands=hands_list,
+                image_width=frame.shape[1],
+                image_height=frame.shape[0],
+                processing_time_ms=mm_frame.processing_time_ms,
+            )
         except Exception as e:
             self._logger.error(f"Detection error: {e}")
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             self._preview.display_frame(frame_rgb)
             return
 
         # Render skeleton & landmarks
-        annotated_bgr = self._renderer.draw(frame.copy(), result)
+        annotated_bgr = self._renderer.draw(frame.copy(), mm_frame)
         annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
         self._preview.display_frame(annotated_rgb)
 
@@ -649,28 +758,32 @@ class DatasetCollectionTab(QWidget):
                 "border-radius: 4px; padding: 3px 8px; font-weight: 600;"
             )
 
-        # Update Hands & Readiness status synchronously
-        if result.has_hands:
-            hand = result.hands[0]
-            self._hands_card.set_value(f"{len(result.hands)} hand(s)")
-            self._readiness_card.set_value(f"Ready ({hand.handedness.value})")
+        # Update Multimodal Telemetry cards synchronously
+        self._lh_card.set_value("● Detected" if mm_frame.has_left_hand else "○ Missing")
+        self._rh_card.set_value("● Detected" if mm_frame.has_right_hand else "○ Missing")
+        self._face_card.set_value("● Detected" if mm_frame.has_face else "○ Missing")
+        if not self._chk_show_pose.isChecked():
+            self._pose_card.set_value("⊘ Disabled")
         else:
-            self._hands_card.set_value("0")
-            self._readiness_card.set_value("No hand detected")
+            self._pose_card.set_value("● Detected" if mm_frame.has_pose else "○ Missing")
 
         # Accumulate frames during dynamic sequence recording
-        if self._dynamic_recording_active and result.has_hands:
-            # Extract primary hand landmarks (21, 3)
-            primary_hand = None
-            for h in result.hands:
-                if h.handedness.value == "Right":
-                    primary_hand = h
-                    break
-            if primary_hand is None:
-                primary_hand = result.hands[0]
+        if self._dynamic_recording_active:
+            mode_val = self._modality_combo.currentData()
+            if mode_val == "one_hand":
+                if self._last_detection and self._last_detection.has_hands:
+                    hand = self._last_detection.hands[0]
+                    lm_array = np.array([[p.x, p.y, p.z] for p in hand.landmarks], dtype=np.float32)
+                    self._recorded_sequence.append(lm_array)
+            else:
+                if mm_frame.has_left_hand or mm_frame.has_right_hand:
+                    try:
+                        mm_mode = ModalityMode(mode_val)
+                    except Exception:
+                        mm_mode = ModalityMode.TWO_HANDS_FACE
+                    vec = self._extractor.extract(mm_frame, mm_mode)
+                    self._recorded_sequence.append(vec)
 
-            lm_array = np.array([[p.x, p.y, p.z] for p in primary_hand.landmarks], dtype=np.float32)
-            self._recorded_sequence.append(lm_array)
             duration = time.time() - self._sequence_start_time
             self._latest_card.set_value(f"Rec: {len(self._recorded_sequence)} fr ({duration:.1f}s)")
 
@@ -702,13 +815,37 @@ class DatasetCollectionTab(QWidget):
             QMessageBox.warning(self, "Select Class", "Please select a gesture class from the list first.")
             return
 
-        # Check hand detection
-        if not self._last_detection or not self._last_detection.has_hands:
-            QMessageBox.warning(
-                self, "No Hand Detected",
-                "No hand was detected in the camera frame.\nPlease hold your hand clearly inside the frame."
-            )
-            return
+        mode_val = self._modality_combo.currentData()
+
+        # Check required modalities
+        if mode_val == "one_hand":
+            if not self._last_detection or not self._last_detection.has_hands:
+                QMessageBox.warning(
+                    self, "No Hand Detected",
+                    "No hand was detected in the camera frame.\nPlease hold your hand clearly inside the frame."
+                )
+                return
+        else:
+            if not self._last_mm_frame or (not self._last_mm_frame.has_left_hand and not self._last_mm_frame.has_right_hand):
+                QMessageBox.warning(
+                    self, "No Hand Detected",
+                    "At least one hand must be detected in the camera frame.\nPlease hold your hand(s) clearly in view."
+                )
+                return
+
+            if mode_val in ("two_hands_face", "two_hands_face_pose") and not self._last_mm_frame.has_face:
+                QMessageBox.warning(
+                    self, "Face Not Detected",
+                    "Face detection is required for this modality.\nPlease look towards the camera so your face is clearly visible."
+                )
+                return
+
+            if mode_val == "two_hands_face_pose" and not self._last_mm_frame.has_pose:
+                QMessageBox.warning(
+                    self, "Pose Not Detected",
+                    "Upper-body pose is required for this modality.\nPlease step back slightly so your shoulders and arms are in view."
+                )
+                return
 
         count = self._samples_spin.value()
         if count == 1:
@@ -717,63 +854,135 @@ class DatasetCollectionTab(QWidget):
             if success:
                 self._latest_card.set_value(f"Saved: {label}")
                 self._update_stats_and_list()
+            else:
+                QMessageBox.warning(self, "Save Error", "Failed to capture or validate sample. Please try again.")
         else:
             # Multi-sample continuous capture
             self._start_multi_capture(label, count)
 
     def _save_single_static_sample(self, label: str) -> bool:
         """Capture and save one valid static sign sample to disk with verification."""
-        if not self._last_detection or not self._last_detection.has_hands:
-            return False
+        mode_val = self._modality_combo.currentData()
 
-        hand = self._last_detection.hands[0]
-        lm_array = np.array([[p.x, p.y, p.z] for p in hand.landmarks], dtype=np.float32)
-        if lm_array.shape != (21, 3) or np.isnan(lm_array).any():
-            return False
+        if mode_val == "one_hand":
+            # Legacy single hand mode
+            if not self._last_detection or not self._last_detection.has_hands:
+                return False
 
-        sanitized = self._organizer.get_class_dir("words", label.replace(" ", "_"))
-        sample_id = uuid.uuid4().hex[:8]
-        sample_dir = sanitized / "samples" / sample_id
-        sample_dir.mkdir(parents=True, exist_ok=True)
+            hand = self._last_detection.hands[0]
+            lm_array = np.array([[p.x, p.y, p.z] for p in hand.landmarks], dtype=np.float32)
+            if lm_array.shape != (21, 3) or np.isnan(lm_array).any():
+                return False
 
-        try:
-            # Save 3D landmarks array (1, 21, 3)
-            np.save(sample_dir / "landmarks.npy", lm_array[np.newaxis, :, :])
+            sanitized = self._organizer.get_class_dir("words", label.replace(" ", "_"))
+            sample_id = uuid.uuid4().hex[:8]
+            sample_dir = sanitized / "samples" / sample_id
+            sample_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save metadata JSON (UTF-8)
-            meta = {
-                "sample_id": sample_id,
-                "gesture_type": "static_word",
-                "gesture_label": label,
-                "dialect": "iraqi",
-                "timestamp": time.time(),
-                "num_frames": 1,
-                "num_hands": len(self._last_detection.hands),
-                "handedness": hand.handedness.value,
-                "duration_seconds": 0.0,
-                "fps": 30.0,
-                "has_motion": False,
-                "total_distance": 0.0,
-                "motion_energy": 0.0,
-            }
-            import json
-            with open(sample_dir / "metadata.json", "w", encoding="utf-8") as f:
-                json.dump(meta, f, indent=2, ensure_ascii=False)
+            try:
+                np.save(sample_dir / "landmarks.npy", lm_array[np.newaxis, :, :])
+                meta = {
+                    "sample_id": sample_id,
+                    "gesture_type": "static_word",
+                    "gesture_label": label,
+                    "dialect": "iraqi",
+                    "timestamp": time.time(),
+                    "num_frames": 1,
+                    "num_hands": len(self._last_detection.hands),
+                    "handedness": hand.handedness.value,
+                    "duration_seconds": 0.0,
+                    "fps": 30.0,
+                    "has_motion": False,
+                    "total_distance": 0.0,
+                    "motion_energy": 0.0,
+                    "schema_version": "v1_single_hand",
+                }
+                import json
+                with open(sample_dir / "metadata.json", "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2, ensure_ascii=False)
 
-            # Re-verify persistence and data integrity
-            check = np.load(sample_dir / "landmarks.npy")
-            if check.shape != (1, 21, 3):
+                check = np.load(sample_dir / "landmarks.npy")
+                if check.shape != (1, 21, 3) or np.isnan(check).any():
+                    import shutil
+                    shutil.rmtree(sample_dir, ignore_errors=True)
+                    return False
+
+                self._logger.info(f"Saved static sample (legacy v1) for '{label}' to {sample_dir}")
+                return True
+            except Exception as e:
+                self._logger.error(f"Failed to save static sample: {e}")
                 import shutil
                 shutil.rmtree(sample_dir, ignore_errors=True)
                 return False
 
-            self._logger.info(f"Saved static sample for '{label}' to {sample_dir}")
-            return True
-        except Exception as e:
-            self._logger.error(f"Failed to save static sample: {e}")
-            import shutil
-            shutil.rmtree(sample_dir, ignore_errors=True)
-            return False
+        else:
+            # Multimodal mode (v2)
+            if not self._last_mm_frame:
+                return False
+
+            try:
+                mm_mode = ModalityMode(mode_val)
+            except Exception:
+                mm_mode = ModalityMode.TWO_HANDS_FACE
+
+            if not self._last_mm_frame.has_left_hand and not self._last_mm_frame.has_right_hand:
+                return False
+            if mm_mode in (ModalityMode.TWO_HANDS_FACE, ModalityMode.TWO_HANDS_FACE_POSE) and not self._last_mm_frame.has_face:
+                return False
+            if mm_mode == ModalityMode.TWO_HANDS_FACE_POSE and not self._last_mm_frame.has_pose:
+                return False
+
+            feat_vec = self._extractor.extract(self._last_mm_frame, mm_mode)
+            expected_dim = self._extractor.get_feature_dim(mm_mode)
+            if feat_vec.shape[0] != expected_dim or np.isnan(feat_vec).any():
+                return False
+
+            sanitized = self._organizer.get_class_dir("words", label.replace(" ", "_"))
+            sample_id = uuid.uuid4().hex[:8]
+            sample_dir = sanitized / "samples" / sample_id
+            sample_dir.mkdir(parents=True, exist_ok=True)
+
+            try:
+                np.save(sample_dir / "landmarks.npy", feat_vec[np.newaxis, :])
+                meta = {
+                    "sample_id": sample_id,
+                    "gesture_type": "static_word",
+                    "gesture_label": label,
+                    "dialect": "iraqi",
+                    "timestamp": time.time(),
+                    "num_frames": 1,
+                    "num_hands": self._last_mm_frame.total_hands_detected,
+                    "handedness": "Both" if (self._last_mm_frame.has_left_hand and self._last_mm_frame.has_right_hand) else ("Left" if self._last_mm_frame.has_left_hand else "Right"),
+                    "duration_seconds": 0.0,
+                    "fps": 30.0,
+                    "has_motion": False,
+                    "total_distance": 0.0,
+                    "motion_energy": 0.0,
+                    "schema_version": MULTIMODAL_SCHEMA_VERSION,
+                    "modality_mode": mode_val,
+                    "feature_dim": expected_dim,
+                    "has_left_hand": self._last_mm_frame.has_left_hand,
+                    "has_right_hand": self._last_mm_frame.has_right_hand,
+                    "has_face": self._last_mm_frame.has_face,
+                    "has_pose": self._last_mm_frame.has_pose,
+                }
+                import json
+                with open(sample_dir / "metadata.json", "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2, ensure_ascii=False)
+
+                check = np.load(sample_dir / "landmarks.npy")
+                if check.shape != (1, expected_dim) or np.isnan(check).any():
+                    import shutil
+                    shutil.rmtree(sample_dir, ignore_errors=True)
+                    return False
+
+                self._logger.info(f"Saved multimodal sample (v2) for '{label}' to {sample_dir}")
+                return True
+            except Exception as e:
+                self._logger.error(f"Failed to save multimodal sample: {e}")
+                import shutil
+                shutil.rmtree(sample_dir, ignore_errors=True)
+                return False
 
     def _start_multi_capture(self, label: str, count: int) -> None:
         """Start multi-sample continuous capture session."""
@@ -905,17 +1114,33 @@ class DatasetCollectionTab(QWidget):
             self._latest_card.set_value(f"Rejected: {frames_count} fr (<5)")
             QMessageBox.warning(
                 self, "Sequence Rejected",
-                f"Sequence rejected: Only {frames_count} valid hand frames recorded.\n"
-                f"Dynamic sign models require at least 5 frames of continuous hand movement."
+                f"Sequence rejected: Only {frames_count} valid frames recorded.\n"
+                f"Dynamic sign models require at least 5 frames of continuous movement."
             )
             return
 
-        # Stack into 3D array (T, 21, 3)
+        mode_val = self._modality_combo.currentData()
+        is_legacy = (mode_val == "one_hand")
+
         try:
             seq_array = np.stack(self._recorded_sequence, axis=0)
-            if seq_array.shape[1:] != (21, 3) or np.isnan(seq_array).any():
+            if np.isnan(seq_array).any():
                 self._latest_card.set_value("Rejected: Invalid data")
                 return
+
+            if is_legacy:
+                if seq_array.shape[1:] != (21, 3):
+                    self._latest_card.set_value("Rejected: Shape mismatch")
+                    return
+            else:
+                try:
+                    mm_mode = ModalityMode(mode_val)
+                except Exception:
+                    mm_mode = ModalityMode.TWO_HANDS_FACE
+                expected_dim = self._extractor.get_feature_dim(mm_mode)
+                if seq_array.shape[1] != expected_dim:
+                    self._latest_card.set_value("Rejected: Shape mismatch")
+                    return
 
             sanitized_dir = self._organizer.get_class_dir("dynamic", label.replace(" ", "_"))
             sample_id = uuid.uuid4().hex[:8]
@@ -932,13 +1157,15 @@ class DatasetCollectionTab(QWidget):
                 "dialect": "iraqi",
                 "timestamp": time.time(),
                 "num_frames": frames_count,
-                "num_hands": 1,
-                "handedness": "Right",
+                "num_hands": 1 if is_legacy else 2,
+                "handedness": "Right" if is_legacy else "Both",
                 "duration_seconds": duration,
                 "fps": frames_count / max(duration, 0.001),
                 "has_motion": True,
                 "total_distance": 0.0,
                 "motion_energy": 0.0,
+                "schema_version": "v1_single_hand" if is_legacy else MULTIMODAL_SCHEMA_VERSION,
+                "modality_mode": mode_val,
             }
             import json
             with open(sample_dir / "metadata.json", "w", encoding="utf-8") as f:
