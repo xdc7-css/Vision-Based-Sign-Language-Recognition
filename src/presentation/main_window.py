@@ -330,12 +330,14 @@ class MainWindow(QMainWindow):
                 self._recognition_tab._stop_camera()
             if hasattr(self, "_dataset_tab"):
                 self._dataset_tab._refresh_camera_list()
-                self._dataset_tab._update_stats_and_list()
+                self._dataset_tab._scan_and_populate_classes()
         elif index == 2:  # Model Training
             if hasattr(self, "_dataset_tab") and getattr(self._dataset_tab, "_is_streaming", False):
                 self._dataset_tab._stop_camera()
             if hasattr(self, "_training_tab"):
                 self._training_tab._sync_active_dialect()
+                if hasattr(self._training_tab, "refresh_model_sync_status"):
+                    self._training_tab.refresh_model_sync_status()
 
     def _refresh_dialect_menu(self) -> None:
         """Update dialect menu check states based on active dialect."""

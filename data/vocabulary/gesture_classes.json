@@ -1,0 +1,538 @@
+{
+  "version": "1.0.0",
+  "updated_at": 1794056812.8798423,
+  "classes": [
+    {
+      "id": "sorry",
+      "name": "آسف",
+      "category": "static",
+      "description": "Sorry",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "eat",
+      "name": "أكل",
+      "category": "both",
+      "description": "Eat",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "greeting_welcome",
+      "name": "أهلا",
+      "category": "static",
+      "description": "Welcome",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "where",
+      "name": "أين",
+      "category": "dynamic",
+      "description": "Where",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ا",
+      "name": "ا",
+      "category": "alphabet",
+      "description": "Letter ا",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "go",
+      "name": "اذهب",
+      "category": "dynamic",
+      "description": "Go",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "custom_السلام_عليكم",
+      "name": "السلام عليكم",
+      "category": "both",
+      "description": "Custom Arabic gesture class",
+      "is_active": true,
+      "is_default": false,
+      "created_at": 1794056812.8798423,
+      "updated_at": 1794056812.8798423
+    },
+    {
+      "id": "letter_ب",
+      "name": "ب",
+      "category": "alphabet",
+      "description": "Letter ب",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ة",
+      "name": "ة",
+      "category": "alphabet",
+      "description": "Letter ة",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ت",
+      "name": "ت",
+      "category": "alphabet",
+      "description": "Letter ت",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "come",
+      "name": "تعال",
+      "category": "dynamic",
+      "description": "Come",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "stop",
+      "name": "توقف",
+      "category": "static",
+      "description": "Stop",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ث",
+      "name": "ث",
+      "category": "alphabet",
+      "description": "Letter ث",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ج",
+      "name": "ج",
+      "category": "alphabet",
+      "description": "Letter ج",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "good",
+      "name": "جيد",
+      "category": "static",
+      "description": "Good",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ح",
+      "name": "ح",
+      "category": "alphabet",
+      "description": "Letter ح",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_خ",
+      "name": "خ",
+      "category": "alphabet",
+      "description": "Letter خ",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_د",
+      "name": "د",
+      "category": "alphabet",
+      "description": "Letter د",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ذ",
+      "name": "ذ",
+      "category": "alphabet",
+      "description": "Letter ذ",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ر",
+      "name": "ر",
+      "category": "alphabet",
+      "description": "Letter ر",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ز",
+      "name": "ز",
+      "category": "alphabet",
+      "description": "Letter ز",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_س",
+      "name": "س",
+      "category": "alphabet",
+      "description": "Letter س",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "bad",
+      "name": "سيء",
+      "category": "static",
+      "description": "Bad",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ش",
+      "name": "ش",
+      "category": "alphabet",
+      "description": "Letter ش",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "drink",
+      "name": "شرب",
+      "category": "dynamic",
+      "description": "Drink",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "thanks",
+      "name": "شكرا",
+      "category": "static",
+      "description": "Thank you",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "thank_you_much",
+      "name": "شكرا جزيلا",
+      "category": "dynamic",
+      "description": "Thank you very much",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ص",
+      "name": "ص",
+      "category": "alphabet",
+      "description": "Letter ص",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ض",
+      "name": "ض",
+      "category": "alphabet",
+      "description": "Letter ض",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ط",
+      "name": "ط",
+      "category": "alphabet",
+      "description": "Letter ط",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ظ",
+      "name": "ظ",
+      "category": "alphabet",
+      "description": "Letter ظ",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ع",
+      "name": "ع",
+      "category": "alphabet",
+      "description": "Letter ع",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_غ",
+      "name": "غ",
+      "category": "alphabet",
+      "description": "Letter غ",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ػ",
+      "name": "ػ",
+      "category": "alphabet",
+      "description": "Letter ػ",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ؼ",
+      "name": "ؼ",
+      "category": "alphabet",
+      "description": "Letter ؼ",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ؽ",
+      "name": "ؽ",
+      "category": "alphabet",
+      "description": "Letter ؽ",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ؾ",
+      "name": "ؾ",
+      "category": "alphabet",
+      "description": "Letter ؾ",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ؿ",
+      "name": "ؿ",
+      "category": "alphabet",
+      "description": "Letter ؿ",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ـ",
+      "name": "ـ",
+      "category": "alphabet",
+      "description": "Letter ـ",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ف",
+      "name": "ف",
+      "category": "alphabet",
+      "description": "Letter ف",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "letter_ق",
+      "name": "ق",
+      "category": "alphabet",
+      "description": "Letter ق",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "how_are_you",
+      "name": "كيف حالك",
+      "category": "dynamic",
+      "description": "How are you?",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "no",
+      "name": "لا",
+      "category": "static",
+      "description": "No",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "why",
+      "name": "لماذا",
+      "category": "dynamic",
+      "description": "Why",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "what",
+      "name": "ماذا",
+      "category": "dynamic",
+      "description": "What",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "when",
+      "name": "متى",
+      "category": "dynamic",
+      "description": "When",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "greeting_hello",
+      "name": "مرحبا",
+      "category": "static",
+      "description": "Hello / Greeting",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "help",
+      "name": "مساعدة",
+      "category": "static",
+      "description": "Help",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "goodbye",
+      "name": "مع السلامة",
+      "category": "dynamic",
+      "description": "Goodbye",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "who",
+      "name": "من",
+      "category": "dynamic",
+      "description": "Who",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "please",
+      "name": "من فضلك",
+      "category": "dynamic",
+      "description": "Please",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "yes",
+      "name": "نعم",
+      "category": "both",
+      "description": "Yes",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    },
+    {
+      "id": "sleep",
+      "name": "نوم",
+      "category": "both",
+      "description": "Sleep",
+      "is_active": true,
+      "is_default": true,
+      "created_at": 1794056812.8448262,
+      "updated_at": 1794056812.8448262
+    }
+  ],
+  "archived_classes": [],
+  "deleted_ids": []
+}

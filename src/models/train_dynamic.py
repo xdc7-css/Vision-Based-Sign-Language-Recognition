@@ -25,7 +25,10 @@ from src.infrastructure.recognition.dynamic_recognizer import (
 from src.models.evaluator import ModelEvaluator, ModelRegistry
 
 
-def inspect_dynamic_dataset(dataset_path: str | Path) -> dict:
+def inspect_dynamic_dataset(
+    dataset_path: str | Path,
+    allowed_classes: Optional[set[str] | list[str]] = None,
+) -> dict:
     """Inspect dynamic sequence dataset and return class analysis."""
     dataset_path = Path(dataset_path)
     if not dataset_path.exists():
@@ -39,11 +42,17 @@ def inspect_dynamic_dataset(dataset_path: str | Path) -> dict:
             "reason": f"المجلد غير موجود: {dataset_path}",
         }
 
+    target_allowed = None
+    if allowed_classes is not None:
+        target_allowed = {str(c).replace(" ", "_") for c in allowed_classes} | {str(c) for c in allowed_classes}
+
     class_counts: dict[str, int] = {}
     for class_dir in sorted(dataset_path.iterdir()):
         if not class_dir.is_dir():
             continue
         class_name = class_dir.name
+        if target_allowed is not None and class_name not in target_allowed:
+            continue
         samples_dir = class_dir / "samples"
         count = 0
         if samples_dir.exists():
@@ -80,6 +89,7 @@ def load_sequence_dataset(
     min_seq_len: int = 5,
     augmenter: Optional[DatasetAugmenter] = None,
     augment_multiplier: int = 1,
+    allowed_classes: Optional[set[str] | list[str]] = None,
 ) -> tuple[list[np.ndarray], np.ndarray]:
     """Load sequential landmark data from a structured dataset.
 
@@ -100,6 +110,10 @@ def load_sequence_dataset(
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset not found: {dataset_path}")
 
+    target_allowed = None
+    if allowed_classes is not None:
+        target_allowed = {str(c).replace(" ", "_") for c in allowed_classes} | {str(c) for c in allowed_classes}
+
     X_list: list[np.ndarray] = []
     y_list: list[str] = []
 
@@ -108,6 +122,8 @@ def load_sequence_dataset(
             continue
 
         class_name = class_dir.name
+        if target_allowed is not None and class_name not in target_allowed:
+            continue
         samples_dir = class_dir / "samples"
 
         if not samples_dir.exists():
@@ -175,6 +191,7 @@ def train_dynamic_model(
     split_name: Optional[str] = None,
     dialect: str = "iraqi",
     progress_callback: Optional[Callable[[int, int, float, float], None]] = None,
+    allowed_classes: Optional[set[str] | list[str]] = None,
 ) -> dict:
     """Train, evaluate, and save the best dynamic gesture model.
 
@@ -206,6 +223,7 @@ def train_dynamic_model(
         dataset_path,
         augmenter=augmenter,
         augment_multiplier=augment_multiplier,
+        allowed_classes=allowed_classes,
     )
     unique_classes = sorted(list(set(labels)))
     n_classes = len(unique_classes)

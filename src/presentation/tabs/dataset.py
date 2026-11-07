@@ -4,7 +4,6 @@ import logging
 import re
 import time
 import uuid
-from pathlib import Path
 from typing import Optional
 
 import cv2
@@ -15,6 +14,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -29,14 +29,15 @@ from PySide6.QtWidgets import (
 from src.application.state import AppState
 from src.application.use_cases import VideoSourceUseCases
 from src.domain.entities import VideoSourceType
-from src.domain.recognition import DEFAULT_VOCABULARY
 from src.infrastructure.camera_service import OpenCVCameraService
 from src.infrastructure.dataset.collector import DatasetCollector
+from src.infrastructure.dataset.gesture_registry import GestureRegistry
 from src.infrastructure.dataset.organizer import DatasetOrganizer
 from src.infrastructure.hand_detection.detector import HandDetector, HandDetectorConfig
 from src.infrastructure.hand_detection.renderer import HandRenderer
 from src.presentation.dialogs.dataset_dialogs import (
     AddClassDialog,
+    DeleteClassDialog,
     EditClassDialog,
     SampleInspectorDialog,
 )
@@ -68,6 +69,7 @@ class DatasetCollectionTab(QWidget):
         # Core services
         self._collector = DatasetCollector()
         self._organizer = DatasetOrganizer()
+        self._registry = GestureRegistry()
         self._camera_service = OpenCVCameraService()
         self._detector = HandDetector(HandDetectorConfig(
             min_detection_confidence=0.30,
@@ -299,24 +301,99 @@ class DatasetCollectionTab(QWidget):
 
         # Class list header & action buttons
         class_header = QHBoxLayout()
-        class_label = QLabel("Gesture Classes")
-        class_label.setStyleSheet("font-size: 14px; font-weight: 700; color: #f8fafc;")
-        class_header.addWidget(class_label)
+        self._class_header_label = QLabel("Gesture Classes")
+        self._class_header_label.setStyleSheet("font-size: 14px; font-weight: 700; color: #f8fafc;")
+        class_header.addWidget(self._class_header_label)
         class_header.addStretch()
 
         self._add_class_btn = QPushButton("+ Add Class")
         self._add_class_btn.setToolTip("Add new Arabic sign class")
         class_header.addWidget(self._add_class_btn)
 
-        self._edit_class_btn = QPushButton("✏️ Rename")
-        self._edit_class_btn.setToolTip("Rename selected class")
+        self._edit_class_btn = QPushButton("✏️ Rename / Edit")
+        self._edit_class_btn.setToolTip("Rename or edit category of selected class")
+        self._edit_class_btn.setEnabled(False)
         class_header.addWidget(self._edit_class_btn)
 
-        self._delete_class_btn = QPushButton("🗑️ Delete")
-        self._delete_class_btn.setToolTip("Delete selected class and its samples")
+        self._delete_class_btn = QPushButton("🗑️ Delete / Archive")
+        self._delete_class_btn.setToolTip("Delete or archive selected class")
+        self._delete_class_btn.setEnabled(False)
         class_header.addWidget(self._delete_class_btn)
 
         right_layout.addLayout(class_header)
+
+        # Simple Class Organization (Search & Filter bar)
+        search_filter_box = QVBoxLayout()
+        search_filter_box.setSpacing(6)
+
+        search_row = QHBoxLayout()
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("🔍  Search classes (Arabic text)...")
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.setStyleSheet("""
+            QLineEdit {
+                background-color: #0f1319;
+                border: 1px solid #2b3441;
+                border-radius: 4px;
+                padding: 6px 10px;
+                color: #f8fafc;
+                font-size: 12px;
+            }
+            QLineEdit:focus {
+                border-color: #0d9488;
+            }
+        """)
+        search_row.addWidget(self._search_edit, stretch=1)
+
+        self._sort_btn = QPushButton("Sort A-Z")
+        self._sort_btn.setCheckable(True)
+        self._sort_btn.setChecked(True)
+        self._sort_btn.setToolTip("Toggle alphabetical sorting")
+        self._sort_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1e293b;
+                border: 1px solid #334155;
+                color: #94a3b8;
+                padding: 5px 10px;
+                font-size: 11px;
+                border-radius: 4px;
+            }
+            QPushButton:checked {
+                background-color: #0f766e;
+                color: #ffffff;
+                border-color: #14b8a6;
+            }
+        """)
+        search_row.addWidget(self._sort_btn)
+        search_filter_box.addLayout(search_row)
+
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(6)
+
+        status_lbl = QLabel("Filter:")
+        status_lbl.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 600;")
+        filter_row.addWidget(status_lbl)
+
+        self._status_filter_combo = QComboBox()
+        self._status_filter_combo.addItem("All Classes", "all")
+        self._status_filter_combo.addItem("With Samples Only", "with_samples")
+        self._status_filter_combo.addItem("Empty Only", "empty")
+        filter_row.addWidget(self._status_filter_combo, stretch=1)
+
+        type_lbl = QLabel("Type:")
+        type_lbl.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 600;")
+        filter_row.addWidget(type_lbl)
+
+        self._type_filter_combo = QComboBox()
+        self._type_filter_combo.addItem("All Types", "all")
+        self._type_filter_combo.addItem("Static Signs", "static")
+        self._type_filter_combo.addItem("Dynamic Sequences", "dynamic")
+        self._type_filter_combo.addItem("Both Types", "both")
+        self._type_filter_combo.addItem("Alphabet Letters", "alphabet")
+        filter_row.addWidget(self._type_filter_combo, stretch=1)
+
+        search_filter_box.addLayout(filter_row)
+        right_layout.addLayout(search_filter_box)
 
         # Classes List Widget
         self._class_list = QListWidget()
@@ -345,6 +422,7 @@ class DatasetCollectionTab(QWidget):
         class_action_bar = QHBoxLayout()
         self._inspect_btn = QPushButton("🔍 Inspect Samples")
         self._inspect_btn.setToolTip("View, inspect, and delete individual samples for selected class")
+        self._inspect_btn.setEnabled(False)
         class_action_bar.addWidget(self._inspect_btn)
 
         self._refresh_stats_btn = QPushButton("🔄 Refresh Stats")
@@ -384,13 +462,17 @@ class DatasetCollectionTab(QWidget):
         self._capture_btn.clicked.connect(self._on_capture_clicked)
         self._batch_capture_btn.clicked.connect(self._toggle_record_sequence)
 
-        # Class management
+        # Class management & search/filter
         self._add_class_btn.clicked.connect(self._add_class)
         self._edit_class_btn.clicked.connect(self._edit_class)
         self._delete_class_btn.clicked.connect(self._delete_class)
         self._inspect_btn.clicked.connect(self._inspect_samples)
         self._refresh_stats_btn.clicked.connect(self._scan_and_populate_classes)
         self._class_list.itemSelectionChanged.connect(self._on_class_selection_changed)
+        self._search_edit.textChanged.connect(self._apply_filters_and_populate)
+        self._status_filter_combo.currentIndexChanged.connect(self._apply_filters_and_populate)
+        self._type_filter_combo.currentIndexChanged.connect(self._apply_filters_and_populate)
+        self._sort_btn.toggled.connect(self._apply_filters_and_populate)
 
     # ── Camera Operations ────────────────────────────────────────────────
 
@@ -599,8 +681,12 @@ class DatasetCollectionTab(QWidget):
         item = self._class_list.currentItem()
         if not item:
             return None
+        val = item.data(Qt.UserRole)
+        if val:
+            return str(val).strip()
         raw_text = item.text().strip()
-        clean = re.sub(r'\s*\([^)]*\)\s*', '', raw_text).strip()
+        clean = re.sub(r'\s*\[[^\]]*\]\s*', '', raw_text).strip()
+        clean = re.sub(r'\s*\([^)]*\)\s*', '', clean).strip()
         clean = re.sub(r'⚠️\s*', '', clean).strip()
         return clean or None
 
@@ -879,157 +965,224 @@ class DatasetCollectionTab(QWidget):
     # ── Class & Dataset Management ───────────────────────────────────────
 
     def _scan_and_populate_classes(self) -> None:
-        """Scan disk dataset directories, merge with default vocabulary, and populate list widget."""
+        """Reload registry and populate list with real-time filters and sample counts."""
+        self._registry.load_or_initialize()
+        self._apply_filters_and_populate()
+
+    def _update_stats_and_list(self) -> None:
+        """Update sample counts and active list items."""
+        self._apply_filters_and_populate()
+
+    def _apply_filters_and_populate(self) -> None:
+        """Filter, sort, and display active gesture classes in the list widget."""
         current_selection = self._get_selected_class_label()
         self._class_list.clear()
 
-        # Gather classes from disk
-        classes_found = set()
-        for cat in ["words", "dynamic", "alphabet"]:
-            p = Path("data/datasets") / cat
-            if p.exists():
-                for d in p.iterdir():
-                    if d.is_dir() and not d.name.startswith("."):
-                        classes_found.add(d.name.replace("_", " "))
+        query = self._search_edit.text().strip() if hasattr(self, "_search_edit") else ""
+        status_filter = self._status_filter_combo.currentData() if hasattr(self, "_status_filter_combo") else "all"
+        type_filter = self._type_filter_combo.currentData() if hasattr(self, "_type_filter_combo") else "all"
+        sort_az = self._sort_btn.isChecked() if hasattr(self, "_sort_btn") else True
 
-        # Ensure default vocabulary entries are included
-        for v in DEFAULT_VOCABULARY:
-            classes_found.add(v.arabic_text)
+        filtered_classes = self._registry.filter_classes(
+            query=query,
+            status_filter=status_filter or "all",
+            category_filter=type_filter or "all",
+            sort_alphabetical=sort_az,
+        )
 
-        # Populate list
         select_row = 0
         row = 0
-        for label in sorted(classes_found):
-            item = QListWidgetItem(f"  {label}  (0 samples)")
+        total_samples = 0
+        total_static = 0
+        total_dynamic = 0
+
+        # Global totals across all active classes
+        all_active = self._registry.list_active_classes()
+        for c in all_active:
+            counts = self._registry.get_sample_counts(c.name)
+            total_samples += counts["total"]
+            total_static += counts["static"]
+            total_dynamic += counts["dynamic"]
+
+        for cls_obj, counts in filtered_classes:
+            static_cnt = counts["static"]
+            dynamic_cnt = counts["dynamic"]
+            cls_total = counts["total"]
+
+            status_note = " ⚠️ (<2)" if cls_total < 2 else ""
+            cat_display = cls_obj.category.capitalize()
+            item_text = f"  {cls_obj.name}   [{cat_display}]   ({static_cnt} static, {dynamic_cnt} dynamic){status_note}"
+
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.UserRole, cls_obj.name)
+            item.setData(Qt.UserRole + 1, cls_obj.id)
             self._class_list.addItem(item)
-            if current_selection and label == current_selection:
+
+            if current_selection and cls_obj.name == current_selection:
                 select_row = row
             row += 1
 
         if self._class_list.count() > 0:
             self._class_list.setCurrentRow(select_row)
 
-        self._update_stats_and_list()
-
-    def _update_stats_and_list(self) -> None:
-        """Rescan sample directories on disk, update item texts and statistical cards."""
-        total_samples = 0
-        total_static = 0
-        total_dynamic = 0
-
-        for idx in range(self._class_list.count()):
-            item = self._class_list.item(idx)
-            raw = item.text().strip()
-            clean = re.sub(r'\s*\([^)]*\)\s*', '', raw).strip()
-            clean = re.sub(r'⚠️\s*', '', clean).strip()
-
-            sanitized = clean.replace(" ", "_").replace("/", "_")
-
-            # Count static
-            static_dir = Path("data/datasets/words") / sanitized / "samples"
-            static_cnt = len([d for d in static_dir.iterdir() if d.is_dir()]) if static_dir.exists() else 0
-
-            # Count dynamic
-            dynamic_dir = Path("data/datasets/dynamic") / sanitized / "samples"
-            dynamic_cnt = len([d for d in dynamic_dir.iterdir() if d.is_dir()]) if dynamic_dir.exists() else 0
-
-            cls_total = static_cnt + dynamic_cnt
-            total_samples += cls_total
-            total_static += static_cnt
-            total_dynamic += dynamic_cnt
-
-            status_note = ""
-            if cls_total < 2:
-                status_note = " ⚠️ (<2)"
-
-            item.setText(f"  {clean}  ({static_cnt} static, {dynamic_cnt} dynamic){status_note}")
+        self._on_class_selection_changed()
 
         self._total_card.set_value(str(total_samples))
-        self._classes_card.set_value(str(self._class_list.count()))
+        self._classes_card.set_value(str(len(all_active)))
         self._split_card.set_value(f"{total_static} / {total_dynamic}")
+        if hasattr(self, "_class_header_label"):
+            self._class_header_label.setText(f"Gesture Classes ({len(filtered_classes)} of {len(all_active)})")
 
     def _on_class_selection_changed(self) -> None:
-        """Handle class selection change in list."""
+        """Handle class selection change, updating action buttons state."""
+        has_sel = self._class_list.currentItem() is not None
+        self._edit_class_btn.setEnabled(has_sel)
+        self._delete_class_btn.setEnabled(has_sel)
+        self._inspect_btn.setEnabled(has_sel)
+
         label = self._get_selected_class_label()
         if label:
             self._logger.debug(f"Selected gesture class: {label}")
 
     @Slot()
     def _add_class(self) -> None:
-        """Open AddClassDialog and create new gesture class."""
-        dlg = AddClassDialog(self)
+        """Open AddClassDialog and create new gesture class via GestureRegistry."""
+        active_names = {c.name for c in self._registry.list_active_classes()}
+        dlg = AddClassDialog(existing_names=active_names, parent=self)
         if dlg.exec():
-            name, cat_type = dlg.get_data()
-            sanitized = name.replace(" ", "_")
-            self._organizer.create_class(cat_type, sanitized)
-            self._scan_and_populate_classes()
+            name, cat_type, desc = dlg.get_full_data()
+            try:
+                cls_obj = self._registry.add_class(name, category=cat_type, description=desc)
+                self._scan_and_populate_classes()
 
-            # Select newly added class
-            for idx in range(self._class_list.count()):
-                item = self._class_list.item(idx)
-                if name in item.text():
-                    self._class_list.setCurrentRow(idx)
-                    break
-            self._latest_card.set_value(f"Added: {name}")
+                # Select newly added class
+                for idx in range(self._class_list.count()):
+                    item = self._class_list.item(idx)
+                    if item.data(Qt.UserRole) == cls_obj.name:
+                        self._class_list.setCurrentRow(idx)
+                        break
+
+                self._latest_card.set_value(f"Added: {name}")
+                QMessageBox.information(
+                    self,
+                    "Class Added",
+                    f"Gesture class «{name}» ({cat_type}) created successfully.",
+                )
+            except Exception as e:
+                self._logger.error(f"Failed to add class '{name}': {e}")
+                QMessageBox.critical(self, "Error Adding Class", str(e))
 
     @Slot()
     def _edit_class(self) -> None:
-        """Open EditClassDialog to rename the selected class."""
+        """Open EditClassDialog to rename or change category of the selected class."""
         current_name = self._get_selected_class_label()
         if not current_name:
-            QMessageBox.information(self, "Select Class", "Please select a class to rename.")
+            QMessageBox.information(self, "Select Class", "Please select a class to edit.")
             return
 
-        dlg = EditClassDialog(current_name, self)
+        cls_obj = self._registry.get_class(current_name)
+        if not cls_obj:
+            QMessageBox.warning(self, "Class Not Found", f"Class «{current_name}» not found in registry.")
+            return
+
+        counts = self._registry.get_sample_counts(current_name)
+        active_names = {c.name for c in self._registry.list_active_classes() if c.id != cls_obj.id}
+
+        dlg = EditClassDialog(
+            current_name=current_name,
+            current_category=cls_obj.category,
+            sample_counts=counts,
+            existing_names=active_names,
+            parent=self,
+        )
+
         if dlg.exec():
-            new_name = dlg.get_new_name()
-            if new_name == current_name:
-                return
+            new_name, new_cat = dlg.get_data()
+            try:
+                renamed = False
+                cat_updated = False
+                target_name = current_name
 
-            old_sanitized = current_name.replace(" ", "_")
-            new_sanitized = new_name.replace(" ", "_")
-
-            # Rename in words, dynamic, and alphabet directories
-            renamed = False
-            for cat in ["words", "dynamic", "alphabet"]:
-                p_old = Path("data/datasets") / cat / old_sanitized
-                p_new = Path("data/datasets") / cat / new_sanitized
-                if p_old.exists() and not p_new.exists():
-                    p_old.rename(p_new)
+                if new_name != current_name:
+                    cls_obj = self._registry.rename_class(current_name, new_name)
+                    target_name = new_name
                     renamed = True
 
-            self._scan_and_populate_classes()
-            self._latest_card.set_value(f"Renamed: {new_name}")
-            if renamed:
-                QMessageBox.information(self, "Class Renamed", f"Renamed «{current_name}» to «{new_name}».")
+                if new_cat != cls_obj.category:
+                    cls_obj = self._registry.update_category(target_name, new_cat)
+                    cat_updated = True
+
+                self._scan_and_populate_classes()
+
+                # Reselect renamed item
+                for idx in range(self._class_list.count()):
+                    item = self._class_list.item(idx)
+                    if item.data(Qt.UserRole) == target_name:
+                        self._class_list.setCurrentRow(idx)
+                        break
+
+                msg_parts = []
+                if renamed:
+                    msg_parts.append(f"Renamed to «{target_name}»")
+                if cat_updated:
+                    msg_parts.append(f"Category changed to {new_cat}")
+                msg = "\n".join(msg_parts) if msg_parts else "No changes made."
+
+                self._latest_card.set_value(f"Edited: {target_name}")
+                QMessageBox.information(self, "Class Updated", f"Class «{target_name}» updated successfully.\n\n{msg}")
+            except Exception as e:
+                self._logger.error(f"Failed to edit class '{current_name}': {e}")
+                QMessageBox.critical(self, "Error Editing Class", str(e))
 
     @Slot()
     def _delete_class(self) -> None:
-        """Delete selected class and all its samples after confirmation."""
+        """Delete or archive selected class with explicit confirmation workflow."""
         current_name = self._get_selected_class_label()
         if not current_name:
-            QMessageBox.information(self, "Select Class", "Please select a class to delete.")
+            QMessageBox.information(self, "Select Class", "Please select a class to delete or archive.")
             return
 
-        confirm = QMessageBox.question(
-            self,
-            "Confirm Deletion",
-            f"Are you sure you want to permanently delete class «{current_name}» and all its recorded samples?\n\n"
-            f"This operation cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
+        cls_obj = self._registry.get_class(current_name)
+        if not cls_obj:
+            QMessageBox.warning(self, "Class Not Found", f"Class «{current_name}» not found in registry.")
+            return
 
-        if confirm == QMessageBox.Yes:
-            sanitized = current_name.replace(" ", "_")
-            import shutil
-            for cat in ["words", "dynamic", "alphabet"]:
-                p = Path("data/datasets") / cat / sanitized
-                if p.exists():
-                    shutil.rmtree(p, ignore_errors=True)
+        counts = self._registry.get_sample_counts(current_name)
+        dlg = DeleteClassDialog(class_name=current_name, sample_counts=counts, parent=self)
 
-            self._scan_and_populate_classes()
-            self._latest_card.set_value(f"Deleted: {current_name}")
+        if dlg.exec():
+            is_perm = dlg.is_permanent_delete()
+            try:
+                action, affected_samples = self._registry.delete_class(
+                    current_name, permanent_delete_samples=is_perm
+                )
+                self._scan_and_populate_classes()
+
+                if action == "deleted":
+                    self._latest_card.set_value(f"Removed: {current_name}")
+                    QMessageBox.information(
+                        self,
+                        "Class Removed",
+                        f"Empty class «{current_name}» removed from active vocabulary.",
+                    )
+                elif action == "archived":
+                    self._latest_card.set_value(f"Archived: {current_name}")
+                    QMessageBox.information(
+                        self,
+                        "Class Archived",
+                        f"Class «{current_name}» archived from active vocabulary.\n"
+                        f"All {affected_samples} sample files were safely preserved on disk.",
+                    )
+                elif action == "permanently_deleted":
+                    self._latest_card.set_value(f"Deleted: {current_name}")
+                    QMessageBox.information(
+                        self,
+                        "Class Deleted",
+                        f"Class «{current_name}» and its {affected_samples} samples were permanently deleted.",
+                    )
+            except Exception as e:
+                self._logger.error(f"Failed to delete class '{current_name}': {e}")
+                QMessageBox.critical(self, "Error Deleting Class", str(e))
 
     @Slot()
     def _inspect_samples(self) -> None:
@@ -1039,7 +1192,7 @@ class DatasetCollectionTab(QWidget):
             QMessageBox.information(self, "Select Class", "Please select a class first.")
             return
 
-        dlg = SampleInspectorDialog(current_name, base_dir=Path("data/datasets"), parent=self)
+        dlg = SampleInspectorDialog(current_name, base_dir=self._registry.dataset_dir, parent=self)
         dlg.exec()
         self._update_stats_and_list()
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import time
 import traceback
 from pathlib import Path
@@ -24,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from src.application.state import AppState
 from src.domain.entities import ModelInfo
+from src.infrastructure.dataset.gesture_registry import GestureRegistry
 from src.infrastructure.dialect_manager import DialectManager
 from src.infrastructure.recognition.hybrid_pipeline import HybridRecognitionPipeline
 from src.models.train_dynamic import inspect_dynamic_dataset, train_dynamic_model
@@ -50,6 +53,7 @@ class TrainingWorker(QThread):
         augment: bool,
         is_dynamic: bool = False,
         model_type: str = "mlp",
+        allowed_classes: Optional[set[str] | list[str]] = None,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -63,6 +67,7 @@ class TrainingWorker(QThread):
         self.augment = augment
         self.is_dynamic = is_dynamic
         self.model_type = model_type
+        self.allowed_classes = allowed_classes
         self._is_cancelled = False
         self._start_time = 0.0
 
@@ -94,6 +99,7 @@ class TrainingWorker(QThread):
                     augment=self.augment,
                     dialect=self.dialect,
                     progress_callback=on_progress,
+                    allowed_classes=self.allowed_classes,
                 )
             else:
                 mt = "mlp"
@@ -113,6 +119,7 @@ class TrainingWorker(QThread):
                     augment=self.augment,
                     dialect=self.dialect,
                     progress_callback=on_progress,
+                    allowed_classes=self.allowed_classes,
                 )
             self.finished_success.emit(result)
         except Exception as e:
@@ -134,10 +141,14 @@ class ModelTrainingTab(QWidget):
         self._state = state
         self._dialect_manager = dialect_manager
         self._pipeline = pipeline
+        self._registry = GestureRegistry()
         self._worker: Optional[TrainingWorker] = None
+        self._logger = logging.getLogger(__name__)
 
         self._setup_ui()
         self._connect_signals()
+        self._sync_active_dialect()
+        self.refresh_model_sync_status()
         self._sync_active_dialect()
 
     def _sync_active_dialect(self) -> None:
@@ -271,6 +282,18 @@ class ModelTrainingTab(QWidget):
         self._export_btn = QPushButton("Export ONNX Model")
         btn_row.addWidget(self._export_btn)
 
+        self._sync_status_badge = QLabel("Checkpoint: Checking...")
+        self._sync_status_badge.setStyleSheet("""
+            background-color: #111827;
+            color: #94a3b8;
+            border: 1px solid #1f2937;
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 600;
+        """)
+        btn_row.addWidget(self._sync_status_badge)
+
         btn_row.addStretch()
         train_layout.addLayout(btn_row)
 
@@ -316,8 +339,47 @@ class ModelTrainingTab(QWidget):
         self._stop_btn.clicked.connect(self._stop_training)
         self._export_btn.clicked.connect(self._export_model)
         self._epochs_spin.valueChanged.connect(self._on_epochs_changed)
+        self._dialect_combo.currentIndexChanged.connect(lambda _: self.refresh_model_sync_status())
+        self._model_type.currentIndexChanged.connect(lambda _: self.refresh_model_sync_status())
         if hasattr(self._state, "active_dialect_changed"):
             self._state.active_dialect_changed.connect(lambda _: self._sync_active_dialect())
+
+    def refresh_model_sync_status(self) -> None:
+        """Verify whether the active dataset classes match the trained model checkpoint."""
+        if not hasattr(self, "_sync_status_badge"):
+            return
+        try:
+            target_dialect = self._dialect_combo.currentText().lower()
+            classes_path = Path(f"data/models/{target_dialect}/classes.json")
+            if not classes_path.exists():
+                self._sync_status_badge.setText("⚠️ Model Not Trained Yet")
+                self._sync_status_badge.setStyleSheet(
+                    "background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
+                )
+                return
+
+            with open(classes_path, "r", encoding="utf-8") as f:
+                trained_classes = set(json.load(f))
+
+            dataset_base = Path("data/datasets/words")
+            active_registry = {c.name.replace(" ", "_") for c in self._registry.list_active_classes()}
+            inspection = inspect_dataset(dataset_base, allowed_classes=active_registry)
+            qualifying = set(inspection["accepted_classes"].keys())
+
+            if trained_classes == qualifying:
+                self._sync_status_badge.setText(f"✅ Checkpoint Synchronized ({len(trained_classes)} classes)")
+                self._sync_status_badge.setStyleSheet(
+                    "background-color: #062b1a; color: #10b981; border: 1px solid #065f46; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
+                )
+            else:
+                self._sync_status_badge.setText(
+                    f"⚠️ Retraining Recommended ({len(qualifying)} active vs {len(trained_classes)} in checkpoint)"
+                )
+                self._sync_status_badge.setStyleSheet(
+                    "background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600;"
+                )
+        except Exception as e:
+            self._logger.debug(f"Sync check note: {e}")
 
     def _export_model(self) -> None:
         """Export trained model checkpoint and vocabulary manifest for deployment."""
@@ -362,11 +424,13 @@ class ModelTrainingTab(QWidget):
             QMessageBox.warning(self, "مجلد البيانات غير موجود", f"المجلد المطلوب {dataset_base} غير موجود.")
             return
 
+        active_registry = {c.name.replace(" ", "_") for c in self._registry.list_active_classes()}
+
         # Detailed inspection (dynamic vs static)
         if is_dynamic:
-            inspection = inspect_dynamic_dataset(dataset_base)
+            inspection = inspect_dynamic_dataset(dataset_base, allowed_classes=active_registry)
         else:
-            inspection = inspect_dataset(dataset_base)
+            inspection = inspect_dataset(dataset_base, allowed_classes=active_registry)
 
         report_lines = [
             f"📊 حالة مجموعة البيانات ({dataset_base.name}):",
@@ -444,6 +508,7 @@ class ModelTrainingTab(QWidget):
             augment=augment,
             is_dynamic=is_dynamic,
             model_type=self._model_type.currentText(),
+            allowed_classes=active_registry,
             parent=self,
         )
         self._worker.progress_updated.connect(self._on_training_progress)
@@ -489,6 +554,7 @@ class ModelTrainingTab(QWidget):
         self._state.active_model = model_info
 
         classes_str = ", ".join([c.replace("_", " ") for c in result.get("classes", [])])
+        self.refresh_model_sync_status()
         success_msg = (
             f"{report_text}\n\n"
             f"🎉 اكتمل التدريب بنجاح!\n"
