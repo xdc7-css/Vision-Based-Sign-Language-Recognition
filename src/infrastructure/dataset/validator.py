@@ -85,8 +85,16 @@ class DatasetValidator:
         # Check metadata
         meta_file = sample_dir / "metadata.json"
         has_metadata = meta_file.exists()
+        schema_version = "v1_single_hand"
         if not has_metadata:
             issues.append("Missing metadata.json")
+        else:
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    meta_dict = json.load(f)
+                schema_version = meta_dict.get("schema_version", "v1_single_hand")
+            except Exception:
+                pass
 
         landmarks_file = sample_dir / "landmarks.npy"
         motion_file = sample_dir / "motion_data.npy"
@@ -102,27 +110,47 @@ class DatasetValidator:
                 shape = data.shape
                 frame_shape = shape
 
-                if data.ndim != 3:
-                    issues.append(f"Landmarks should be 3D array, got {data.ndim}D")
-                else:
-                    num_frames = shape[0]
-                    num_landmarks = shape[1]
+                if schema_version == "v2_multimodal":
+                    # Multimodal sample validation
+                    if data.ndim == 2:
+                        num_frames = shape[0]
+                        num_landmarks = shape[1]
+                    elif data.ndim == 3:
+                        num_frames = shape[0]
+                        num_landmarks = shape[1]
+                    else:
+                        issues.append(f"Multimodal landmarks invalid dimensions: {data.ndim}D")
 
-                    is_static = (num_frames == 1)
-                    required_min = 1 if is_static else self.MIN_FRAMES
-                    if num_frames < required_min:
-                        issues.append(f"Too few frames: {num_frames} < {required_min}")
-                    if shape[1] != self.MIN_LANDMARKS:
-                        issues.append(f"Wrong landmark count: {shape[1]} != {self.MIN_LANDMARKS}")
-                    if shape[2] != self.LANDMARK_DIM:
-                        issues.append(f"Wrong landmark dimension: {shape[2]} != {self.LANDMARK_DIM}")
-
+                    if num_frames < 1:
+                        issues.append("Too few frames: 0")
                     if np.isnan(data).any():
-                        issues.append("Landmarks contain NaN values")
+                        issues.append("Multimodal landmarks contain NaN values")
                     if np.isinf(data).any():
-                        issues.append("Landmarks contain inf values")
-                    if (data[:, :, :2] < 0).any() or (data[:, :, :2] > 1).any():
-                        issues.append("Landmarks out of normalized range [0, 1]")
+                        issues.append("Multimodal landmarks contain inf values")
+
+                else:
+                    # Legacy v1 single-hand sample validation
+                    if data.ndim != 3:
+                        issues.append(f"Landmarks should be 3D array, got {data.ndim}D")
+                    else:
+                        num_frames = shape[0]
+                        num_landmarks = shape[1]
+
+                        is_static = (num_frames == 1)
+                        required_min = 1 if is_static else self.MIN_FRAMES
+                        if num_frames < required_min:
+                            issues.append(f"Too few frames: {num_frames} < {required_min}")
+                        if shape[1] != self.MIN_LANDMARKS:
+                            issues.append(f"Wrong landmark count: {shape[1]} != {self.MIN_LANDMARKS}")
+                        if shape[2] != self.LANDMARK_DIM:
+                            issues.append(f"Wrong landmark dimension: {shape[2]} != {self.LANDMARK_DIM}")
+
+                        if np.isnan(data).any():
+                            issues.append("Landmarks contain NaN values")
+                        if np.isinf(data).any():
+                            issues.append("Landmarks contain inf values")
+                        if (data[:, :, :2] < 0).any() or (data[:, :, :2] > 1).any():
+                            issues.append("Landmarks out of normalized range [0, 1]")
 
             except Exception as e:
                 issues.append(f"Corrupt landmarks file: {e}")

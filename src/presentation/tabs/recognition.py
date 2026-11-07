@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 from src.application.state import AppState
 from src.application.use_cases import VideoSourceUseCases
 from src.domain.entities import DialectInfo, VideoSourceType
+from src.domain.multimodal import ModalityConfig, ModalityMode
 from src.infrastructure.analytics import AnalyticsEngine
 from src.infrastructure.camera_service import OpenCVCameraService
 from src.infrastructure.dialect_manager import DialectManager
@@ -49,13 +50,16 @@ from src.infrastructure.recognition.karsl_recognizer import (
     KArSLRecognizer,
     KArSLResult,
 )
+from src.infrastructure.recognition.multimodal_recognizer import MultimodalSignRecognizer
 from src.infrastructure.text_builder import ArabicTextBuilder
+from src.infrastructure.vision.multimodal_detector import MultimodalDetector
+from src.infrastructure.vision.multimodal_renderer import MultimodalRenderer
 from src.presentation.dialogs.karsl_vocab_dialog import KArSLVocabularyDialog
 from src.presentation.widgets import CameraPreview, SectionHeader, StatCard
 
 
 class SignRecognitionWorker(QThread):
-    """Background worker thread executing real-time MediaPipe tracking and KArSL/Custom sign recognition."""
+    """Background worker thread executing real-time MediaPipe tracking and KArSL/Custom/Multimodal sign recognition."""
 
     karsl_loaded = Signal(bool, str)
     frame_processed = Signal(object, object, dict, float)  # frame, karsl_res, vis_info, elapsed_ms
@@ -77,8 +81,15 @@ class SignRecognitionWorker(QThread):
         self._running = True
         self._lock = threading.Lock()
 
+        # Multimodal Components (Dual Hands + Face)
+        self._multimodal_detector = MultimodalDetector(
+            ModalityConfig(mode=ModalityMode.TWO_HANDS_FACE, enable_pose=False)
+        )
+        self._multimodal_renderer = MultimodalRenderer()
+        self._multimodal_recognizer = MultimodalSignRecognizer()
+
         # Configurable processing parameters
-        self.active_engine = "karsl"  # "karsl" or "custom"
+        self.active_engine = "karsl"  # "karsl", "custom", or "multimodal"
         self.mirror = True
         self.show_landmarks = True
         self.confidence_threshold = 0.35
@@ -220,6 +231,78 @@ class SignRecognitionWorker(QThread):
                             is_new=False,
                             decision_path="no_hand",
                         )
+                elif self.active_engine == "multimodal":
+                    mm_frame = self._multimodal_detector.detect(frame)
+                    has_model = self._multimodal_recognizer.is_loaded
+                    vis_info["multimodal_loaded"] = has_model
+                    vis_info["hands_detected"] = mm_frame.total_hands_detected
+                    vis_info["has_left_hand"] = mm_frame.has_left_hand
+                    vis_info["has_right_hand"] = mm_frame.has_right_hand
+                    vis_info["face_detected"] = mm_frame.has_face
+                    vis_info["pose_detected"] = mm_frame.has_pose
+
+                    if self.show_landmarks:
+                        ann_bgr = self._multimodal_renderer.draw(frame.copy(), mm_frame)
+                        annotated = cv2.cvtColor(ann_bgr, cv2.COLOR_BGR2RGB)
+                    else:
+                        annotated = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                    if not has_model:
+                        vis_info["multimodal_status"] = "not_trained"
+                        karsl_res = KArSLResult(
+                            pred_idx=-1,
+                            arabic_text="",
+                            english_text="",
+                            confidence=0.0,
+                            hand_detected=mm_frame.has_left_hand or mm_frame.has_right_hand,
+                            face_detected=mm_frame.has_face,
+                            pose_detected=mm_frame.has_pose,
+                            buffer_fill=0,
+                            is_new=False,
+                            decision_path="multimodal_not_trained",
+                        )
+                    else:
+                        if mm_frame.has_left_hand or mm_frame.has_right_hand:
+                            rec_res = self._multimodal_recognizer.predict(mm_frame, self.confidence_threshold)
+                            if rec_res.is_valid:
+                                karsl_res = KArSLResult(
+                                    pred_idx=0,
+                                    arabic_text=rec_res.arabic_text,
+                                    english_text="",
+                                    confidence=rec_res.confidence,
+                                    hand_detected=True,
+                                    face_detected=mm_frame.has_face,
+                                    pose_detected=mm_frame.has_pose,
+                                    buffer_fill=1,
+                                    is_new=True,
+                                    decision_path="multimodal_iraqi",
+                                )
+                            else:
+                                karsl_res = KArSLResult(
+                                    pred_idx=-1,
+                                    arabic_text="",
+                                    english_text="",
+                                    confidence=0.0,
+                                    hand_detected=True,
+                                    face_detected=mm_frame.has_face,
+                                    pose_detected=mm_frame.has_pose,
+                                    buffer_fill=0,
+                                    is_new=False,
+                                    decision_path="multimodal_low_confidence",
+                                )
+                        else:
+                            karsl_res = KArSLResult(
+                                pred_idx=-1,
+                                arabic_text="",
+                                english_text="",
+                                confidence=0.0,
+                                hand_detected=False,
+                                face_detected=mm_frame.has_face,
+                                pose_detected=mm_frame.has_pose,
+                                buffer_fill=0,
+                                is_new=False,
+                                decision_path="multimodal_no_hands",
+                            )
                 else:
                     annotated = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -480,7 +563,8 @@ class RecognitionTab(QWidget):
 
         self._engine_selector = QComboBox()
         self._engine_selector.addItem("KArSL-502 (502 Standard Signs)", "karsl")
-        self._engine_selector.addItem("Iraqi Custom Classifier", "custom")
+        self._engine_selector.addItem("Iraqi Custom Classifier (Legacy)", "custom")
+        self._engine_selector.addItem("Multimodal Iraqi — Hands + Face", "multimodal")
         model_bar.addWidget(self._engine_selector, stretch=1)
 
         self._model_status_badge = QLabel("● Pretrained (502 signs)")
@@ -860,6 +944,10 @@ class RecognitionTab(QWidget):
             self._conf_bar.setValue(0)
             self._conf_badge.setText("⚠️ Custom Model Not Trained")
             self._caption_label.setText("النموذج المخصص غير مدرب")
+        elif self._worker.active_engine == "multimodal" and not vis_info.get("multimodal_loaded", True):
+            self._conf_bar.setValue(0)
+            self._conf_badge.setText("⚠️ Multimodal Model Not Trained")
+            self._caption_label.setText("النموذج المتعدد غير مدرب")
         elif karsl_res and karsl_res.hand_detected:
             conf_pct = int(getattr(karsl_res, "confidence", 0.0) * 100)
             self._conf_bar.setValue(conf_pct)
@@ -977,6 +1065,37 @@ class RecognitionTab(QWidget):
                 DialectInfo("iraqi", "Iraqi Custom (Not Trained)", "عراقية")
             )
 
+    def _update_multimodal_model_status_ui(self) -> None:
+        """Update model status badge, caption, and vocabulary list button based on multimodal model state."""
+        if self._engine_selector.currentData() != "multimodal":
+            return
+        self._worker._multimodal_recognizer.load_model()
+        is_trained = self._worker._multimodal_recognizer.is_loaded
+        classes = self._worker._multimodal_recognizer.classes
+
+        if is_trained and classes:
+            self._model_status_badge.setText(f"● Multimodal ({len(classes)} signs)")
+            self._model_status_badge.setStyleSheet(
+                "color: #38bdf8; font-weight: 600; padding: 2px 8px; background: #0c4a6e; border-radius: 4px; font-size: 11px;"
+            )
+            self._vocab_btn.setText(f"Multimodal ({len(classes)})")
+            self._caption_label.setText("جاهز للترجمة (متعدد الوسائط)")
+            self._conf_badge.setText("Waiting for sign...")
+            self._state.active_dialect_changed.emit(
+                DialectInfo("multimodal", f"Multimodal Iraqi ({len(classes)} signs)", "عراقية")
+            )
+        else:
+            self._model_status_badge.setText("⚠️ Multimodal Not Trained")
+            self._model_status_badge.setStyleSheet(
+                "color: #f59e0b; font-weight: 600; padding: 2px 8px; background: #451a03; border-radius: 4px; font-size: 11px;"
+            )
+            self._vocab_btn.setText("Multimodal (0)")
+            self._caption_label.setText("النموذج المتعدد غير مدرب")
+            self._conf_badge.setText("Multimodal Model Not Trained")
+            self._state.active_dialect_changed.emit(
+                DialectInfo("multimodal", "Multimodal Iraqi (Not Trained)", "عراقية")
+            )
+
     def _on_engine_changed(self, index: int) -> None:
         engine = self._engine_selector.currentData()
         self._worker.active_engine = engine
@@ -984,6 +1103,8 @@ class RecognitionTab(QWidget):
             if self._dialect_manager:
                 self._dialect_manager.reload_dialect()
             self._update_custom_model_status_ui()
+        elif engine == "multimodal":
+            self._update_multimodal_model_status_ui()
         else:
             self._model_status_badge.setText("● Pretrained (502 signs)")
             self._model_status_badge.setStyleSheet(
@@ -997,7 +1118,41 @@ class RecognitionTab(QWidget):
             )
 
     def _open_vocab_dialog(self) -> None:
-        if self._worker.active_engine == "custom":
+        if self._worker.active_engine == "multimodal":
+            import json
+            classes = []
+            classes_path = Path("data/models/multimodal/classes.json")
+            if classes_path.exists():
+                try:
+                    with open(classes_path, "r", encoding="utf-8") as f:
+                        classes = json.load(f)
+                except Exception:
+                    pass
+
+            if not classes:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    self,
+                    "Multimodal Signs List",
+                    "No multimodal signs trained yet.\n\n"
+                    "Please record multimodal samples (Hands + Face) in Dataset Studio and train the model in Model Training.",
+                )
+                return
+
+            vocab = []
+            for i, c in enumerate(classes):
+                s_count = 0
+                s_dir = Path("data/datasets/words") / c / "samples"
+                if s_dir.exists():
+                    s_count = len(list(s_dir.iterdir()))
+                vocab.append((i + 1, c.replace("_", " "), f"Multimodal Sign ({s_count} samples)"))
+
+            dialog = KArSLVocabularyDialog(vocab, parent=self)
+            dialog.setWindowTitle("Multimodal Sign Vocabulary")
+            dialog.exec()
+            return
+
+        elif self._worker.active_engine == "custom":
             import json
             classes = []
             classes_path = Path("data/models/iraqi/classes.json")
