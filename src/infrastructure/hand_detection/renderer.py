@@ -84,7 +84,12 @@ class HandRenderer:
         if isinstance(result, HandDetectionResult):
             return self.draw(image, result)
         elif isinstance(result, list):
-            res_obj = HandDetectionResult(hands=result, image_width=image.shape[1], image_height=image.shape[0], fps=0.0)
+            res_obj = HandDetectionResult(
+                hands=result,
+                image_width=image.shape[1],
+                image_height=image.shape[0],
+                processing_time_ms=0.0,
+            )
             return self.draw(image, res_obj)
         return image.copy()
 

@@ -322,6 +322,8 @@ class MainWindow(QMainWindow):
                 self._dataset_tab._stop_camera()
             if hasattr(self, "_recognition_tab"):
                 self._recognition_tab._refresh_camera_list()
+                if hasattr(self._recognition_tab, "_update_custom_model_status_ui"):
+                    self._recognition_tab._update_custom_model_status_ui()
             self._refresh_dialect_menu()
         elif index == 1:  # Dataset Studio
             if hasattr(self, "_recognition_tab") and getattr(self._recognition_tab, "_is_streaming", False):

@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 
 from src.application.state import AppState
 from src.application.use_cases import VideoSourceUseCases
-from src.domain.entities import VideoSourceType
+from src.domain.entities import DialectInfo, VideoSourceType
 from src.infrastructure.analytics import AnalyticsEngine
 from src.infrastructure.camera_service import OpenCVCameraService
 from src.infrastructure.dialect_manager import DialectManager
@@ -125,17 +125,50 @@ class SignRecognitionWorker(QThread):
                     frame_to_show = ann_bgr if self.show_landmarks else frame
                     annotated = cv2.cvtColor(frame_to_show, cv2.COLOR_BGR2RGB)
                 elif self.active_engine == "custom" and self._detector:
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    det_res = self._detector.detect(frame_rgb)
+                    det_res = self._detector.detect(frame)
                     vis_info["hands_detected"] = len(det_res.hands)
-                    if self.show_landmarks and self._renderer and det_res.hands:
-                        ann_bgr = self._renderer.render(frame.copy(), det_res.hands)
+                    if self.show_landmarks and self._renderer and det_res.has_hands:
+                        ann_bgr = self._renderer.draw(frame.copy(), det_res)
                         annotated = cv2.cvtColor(ann_bgr, cv2.COLOR_BGR2RGB)
                     else:
-                        annotated = frame_rgb
+                        annotated = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-                    if det_res.hands and self._pipeline:
-                        hyp_res = self._pipeline.process(det_res.hands[0])
+                    # Check if custom model is trained and available
+                    has_custom_model = (
+                        self._pipeline is not None
+                        and (
+                            (getattr(self._pipeline, "_static_recognizer", None) is not None and self._pipeline._static_recognizer.is_loaded)
+                            or (getattr(self._pipeline, "_word_recognizer", None) is not None and getattr(self._pipeline._word_recognizer, "_static_recognizer", None) is not None and self._pipeline._word_recognizer._static_recognizer.is_loaded)
+                        )
+                    )
+                    vis_info["custom_model_loaded"] = has_custom_model
+
+                    if not has_custom_model:
+                        vis_info["custom_status"] = "not_trained"
+                        karsl_res = KArSLResult(
+                            pred_idx=-1,
+                            arabic_text="",
+                            english_text="",
+                            confidence=0.0,
+                            hand_detected=det_res.has_hands,
+                            face_detected=False,
+                            pose_detected=False,
+                            buffer_fill=0,
+                            is_new=False,
+                            decision_path="not_trained",
+                        )
+                    elif det_res.has_hands and self._pipeline:
+                        # Synchronize pipeline thresholds with worker confidence_threshold
+                        self._pipeline.config.word_threshold = min(self._pipeline.config.word_threshold, self.confidence_threshold)
+                        self._pipeline.config.alphabet_threshold = min(self._pipeline.config.alphabet_threshold, self.confidence_threshold)
+                        if hasattr(self._pipeline, "_word_recognizer") and self._pipeline._word_recognizer:
+                            self._pipeline._word_recognizer._config.min_confidence_static = min(
+                                self._pipeline._word_recognizer._config.min_confidence_static,
+                                self.confidence_threshold,
+                            )
+
+                        hand = det_res.hands[0]
+                        hyp_res = self._pipeline.process(hand)
                         if hyp_res and hyp_res.is_valid:
                             karsl_res = KArSLResult(
                                 pred_idx=0,
@@ -149,6 +182,44 @@ class SignRecognitionWorker(QThread):
                                 is_new=True,
                                 decision_path=hyp_res.decision_path,
                             )
+                        else:
+                            # Hand detected, but score below threshold or in cooldown
+                            raw_sr = getattr(self._pipeline, "_static_recognizer", None) or getattr(getattr(self._pipeline, "_word_recognizer", None), "_static_recognizer", None)
+                            raw_conf = 0.0
+                            raw_text = ""
+                            if raw_sr and raw_sr.is_loaded:
+                                try:
+                                    r_pred = raw_sr.predict(hand, 0.0)
+                                    raw_conf = r_pred.confidence
+                                    raw_text = r_pred.arabic_text
+                                except Exception:
+                                    pass
+                            karsl_res = KArSLResult(
+                                pred_idx=-1,
+                                arabic_text=raw_text,
+                                english_text="",
+                                confidence=raw_conf,
+                                hand_detected=True,
+                                face_detected=False,
+                                pose_detected=False,
+                                buffer_fill=0,
+                                is_new=False,
+                                decision_path="detecting",
+                            )
+                    else:
+                        # No hand detected
+                        karsl_res = KArSLResult(
+                            pred_idx=-1,
+                            arabic_text="",
+                            english_text="",
+                            confidence=0.0,
+                            hand_detected=False,
+                            face_detected=False,
+                            pose_detected=False,
+                            buffer_fill=0,
+                            is_new=False,
+                            decision_path="no_hand",
+                        )
                 else:
                     annotated = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -412,8 +483,14 @@ class RecognitionTab(QWidget):
         self._engine_selector.addItem("Iraqi Custom Classifier", "custom")
         model_bar.addWidget(self._engine_selector, stretch=1)
 
+        self._model_status_badge = QLabel("● Pretrained (502 signs)")
+        self._model_status_badge.setStyleSheet(
+            "color: #10b981; font-weight: 600; padding: 3px 8px; background: #064e3b; border-radius: 4px; font-size: 11px;"
+        )
+        model_bar.addWidget(self._model_status_badge)
+
         self._vocab_btn = QPushButton("502 Signs List")
-        self._vocab_btn.setToolTip("View full dictionary of 502 supported Arabic signs")
+        self._vocab_btn.setToolTip("View full dictionary of supported Arabic signs")
         model_bar.addWidget(self._vocab_btn)
 
         right_layout.addLayout(model_bar)
@@ -749,6 +826,7 @@ class RecognitionTab(QWidget):
             karsl_res
             and karsl_res.hand_detected
             and karsl_res.confidence >= self._worker.confidence_threshold
+            and karsl_res.arabic_text
         ):
             word = (
                 getattr(karsl_res, "arabic_text", "")
@@ -778,6 +856,18 @@ class RecognitionTab(QWidget):
                 self._history_list.insertItem(0, item_text)
                 if self._history_list.count() > 50:
                     self._history_list.takeItem(self._history_list.count() - 1)
+        elif self._worker.active_engine == "custom" and not vis_info.get("custom_model_loaded", True):
+            self._conf_bar.setValue(0)
+            self._conf_badge.setText("⚠️ Custom Model Not Trained")
+            self._caption_label.setText("النموذج المخصص غير مدرب")
+        elif karsl_res and karsl_res.hand_detected:
+            conf_pct = int(getattr(karsl_res, "confidence", 0.0) * 100)
+            self._conf_bar.setValue(conf_pct)
+            raw_text = getattr(karsl_res, "arabic_text", "").strip()
+            if raw_text and conf_pct > 10:
+                self._conf_badge.setText(f"Detecting: {raw_text} ({conf_pct}%)")
+            else:
+                self._conf_badge.setText("Hand Detected · Awaiting Sign...")
         else:
             self._conf_bar.setValue(0)
             self._conf_badge.setText("Waiting for sign...")
@@ -847,16 +937,114 @@ class RecognitionTab(QWidget):
     def _on_mirror_toggled(self, checked: bool) -> None:
         self._worker.mirror = checked
 
+    def _update_custom_model_status_ui(self) -> None:
+        """Update model status badge, caption, and vocabulary list button based on custom model state."""
+        if self._engine_selector.currentData() != "custom":
+            return
+        import json
+        classes = []
+        classes_path = Path("data/models/iraqi/classes.json")
+        model_path = Path("data/models/iraqi/static_model.pkl")
+        is_trained = model_path.exists()
+
+        if classes_path.exists():
+            try:
+                with open(classes_path, "r", encoding="utf-8") as f:
+                    classes = json.load(f)
+            except Exception:
+                pass
+
+        if is_trained and classes:
+            self._model_status_badge.setText(f"● Trained ({len(classes)} signs)")
+            self._model_status_badge.setStyleSheet(
+                "color: #10b981; font-weight: 600; padding: 2px 8px; background: #064e3b; border-radius: 4px; font-size: 11px;"
+            )
+            self._vocab_btn.setText(f"Custom Signs ({len(classes)})")
+            self._caption_label.setText("جاهز للترجمة (مخصص)")
+            self._conf_badge.setText("Waiting for sign...")
+            self._state.active_dialect_changed.emit(
+                DialectInfo("iraqi", f"Iraqi Custom ({len(classes)} signs)", "عراقية")
+            )
+        else:
+            self._model_status_badge.setText("⚠️ Not Trained")
+            self._model_status_badge.setStyleSheet(
+                "color: #f59e0b; font-weight: 600; padding: 2px 8px; background: #451a03; border-radius: 4px; font-size: 11px;"
+            )
+            self._vocab_btn.setText("Custom Signs (0)")
+            self._caption_label.setText("النموذج المخصص غير مدرب")
+            self._conf_badge.setText("Custom Model Not Trained")
+            self._state.active_dialect_changed.emit(
+                DialectInfo("iraqi", "Iraqi Custom (Not Trained)", "عراقية")
+            )
+
     def _on_engine_changed(self, index: int) -> None:
         engine = self._engine_selector.currentData()
         self._worker.active_engine = engine
-        if engine == "custom" and self._dialect_manager:
-            self._dialect_manager.reload_dialect()
+        if engine == "custom":
+            if self._dialect_manager:
+                self._dialect_manager.reload_dialect()
+            self._update_custom_model_status_ui()
+        else:
+            self._model_status_badge.setText("● Pretrained (502 signs)")
+            self._model_status_badge.setStyleSheet(
+                "color: #10b981; font-weight: 600; padding: 2px 8px; background: #064e3b; border-radius: 4px; font-size: 11px;"
+            )
+            self._vocab_btn.setText("502 Signs List")
+            self._caption_label.setText("جاهز للترجمة")
+            self._conf_badge.setText("Waiting for sign...")
+            self._state.active_dialect_changed.emit(
+                DialectInfo("karsl", "KArSL-502 / Iraqi", "عراقية")
+            )
 
     def _open_vocab_dialog(self) -> None:
-        labels_path = Path("data/models/karsl/labels.json")
-        dlg = KArSLVocabularyDialog(labels_path=labels_path, parent=self)
-        dlg.exec()
+        if self._worker.active_engine == "custom":
+            import json
+            classes = []
+            classes_path = Path("data/models/iraqi/classes.json")
+            if classes_path.exists():
+                try:
+                    with open(classes_path, "r", encoding="utf-8") as f:
+                        classes = json.load(f)
+                except Exception:
+                    pass
+            if not classes:
+                words_dir = Path("data/datasets/words")
+                if words_dir.exists():
+                    classes = [
+                        d.name
+                        for d in words_dir.iterdir()
+                        if d.is_dir() and (d / "samples").exists() and list((d / "samples").iterdir())
+                    ]
+
+            if not classes:
+                from PySide6.QtWidgets import QMessageBox
+
+                QMessageBox.information(
+                    self,
+                    "Custom Signs List",
+                    "No custom signs trained yet.\n\nPlease collect sign samples in Dataset Studio and train the model in Model Training tab.",
+                )
+                return
+
+            vocab = []
+            for i, c in enumerate(classes):
+                s_count = 0
+                s_dir = Path("data/datasets/words") / c / "samples"
+                if s_dir.exists():
+                    s_count = len(list(s_dir.iterdir()))
+                vocab.append({
+                    "index": i + 1,
+                    "arabic": c.replace("_", " "),
+                    "english": f"{s_count} samples",
+                    "category": "Custom Sign (Static)",
+                })
+            dlg = KArSLVocabularyDialog(vocabulary=vocab, parent=self)
+            dlg.setWindowTitle(f"Iraqi Custom Sign Language Dictionary ({len(classes)} Signs)")
+            dlg.exec()
+        else:
+            labels_path = Path("data/models/karsl/labels.json")
+            dlg = KArSLVocabularyDialog(labels_path=labels_path, parent=self)
+            dlg.exec()
 
     def _on_karsl_loaded(self, success: bool, msg: str) -> None:
         if success:

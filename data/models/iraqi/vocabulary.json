@@ -4,12 +4,35 @@
     "model_type": "mlp",
     "accuracy": 1.0,
     "classes": [
+      "آسف",
+      "أكل",
       "السلام_عليكم",
       "لا",
-      "نعم"
+      "نعم",
+      "نوم"
     ]
   },
   "gestures": {
+    "آسف": {
+      "arabic": "آسف",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_آسف": {
+      "arabic": "آسف",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "أكل": {
+      "arabic": "أكل",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_أكل": {
+      "arabic": "أكل",
+      "type": "static",
+      "threshold": 0.65
+    },
     "السلام_عليكم": {
       "arabic": "السلام عليكم",
       "type": "static",
@@ -37,6 +60,16 @@
     },
     "static_نعم": {
       "arabic": "نعم",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "نوم": {
+      "arabic": "نوم",
+      "type": "static",
+      "threshold": 0.65
+    },
+    "static_نوم": {
+      "arabic": "نوم",
       "type": "static",
       "threshold": 0.65
     }
