@@ -29,9 +29,9 @@ from src.infrastructure.recognition.static_recognizer import StaticSignRecognize
 
 @dataclass
 class WordRecognizerConfig:
-    min_confidence_static: float = 0.65
-    min_confidence_dynamic: float = 0.70
-    min_confidence_alphabet: float = 0.90
+    min_confidence_static: float = 0.50
+    min_confidence_dynamic: float = 0.50
+    min_confidence_alphabet: float = 0.50
     rejection_threshold: float = 0.5
     temporal_smoothing_window: int = 5
     cooldown_frames: int = 30

@@ -25,8 +25,16 @@ from src.infrastructure.recognition.static_recognizer import (
 from src.models.evaluator import ModelEvaluator, ModelRegistry
 
 
-def inspect_dataset(dataset_path: str | Path) -> dict:
+def inspect_dataset(
+    dataset_path: str | Path,
+    allowed_classes: Optional[set[str] | list[str]] = None,
+) -> dict:
     """Inspect dataset directory and return detailed class analysis.
+
+    Args:
+        dataset_path: Path to structured dataset.
+        allowed_classes: Optional set/list of class names to inspect. If given,
+                         only classes matching this list will be included.
 
     Returns:
         dict with total_classes, class_counts, accepted_classes,
@@ -44,11 +52,17 @@ def inspect_dataset(dataset_path: str | Path) -> dict:
             "reason": f"المجلد غير موجود: {dataset_path}",
         }
 
+    target_allowed = None
+    if allowed_classes is not None:
+        target_allowed = {str(c).replace(" ", "_") for c in allowed_classes} | {str(c) for c in allowed_classes}
+
     class_counts: dict[str, int] = {}
     for class_dir in sorted(dataset_path.iterdir()):
         if not class_dir.is_dir():
             continue
         class_name = class_dir.name
+        if target_allowed is not None and class_name not in target_allowed:
+            continue
         samples_dir = class_dir / "samples"
         count = 0
         if samples_dir.exists():
@@ -206,6 +220,7 @@ def train_static_model(
     split_name: Optional[str] = None,
     dialect: str = "iraqi",
     progress_callback: Optional[Callable[[int, int, float, float], None]] = None,
+    allowed_classes: Optional[set[str] | list[str]] = None,
 ) -> dict:
     """Train, evaluate, and save the best static gesture model.
 
@@ -234,7 +249,7 @@ def train_static_model(
 
     augmenter = DatasetAugmenter() if augment else None
     X, y, inspection = load_dataset(
-        dataset_path, augmenter, augment_multiplier, split_manager, split_name
+        dataset_path, augmenter, augment_multiplier, split_manager, split_name, allowed_classes=allowed_classes
     )
 
     counts = Counter(y)

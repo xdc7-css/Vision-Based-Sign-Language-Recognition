@@ -12,7 +12,7 @@ Supports:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -25,12 +25,71 @@ from src.infrastructure.recognition.dynamic_recognizer import (
 from src.models.evaluator import ModelEvaluator, ModelRegistry
 
 
+def inspect_dynamic_dataset(
+    dataset_path: str | Path,
+    allowed_classes: Optional[set[str] | list[str]] = None,
+) -> dict:
+    """Inspect dynamic sequence dataset and return class analysis."""
+    dataset_path = Path(dataset_path)
+    if not dataset_path.exists():
+        return {
+            "total_classes": 0,
+            "class_counts": {},
+            "accepted_classes": {},
+            "insufficient_classes": {},
+            "empty_classes": {},
+            "is_trainable": False,
+            "reason": f"المجلد غير موجود: {dataset_path}",
+        }
+
+    target_allowed = None
+    if allowed_classes is not None:
+        target_allowed = {str(c).replace(" ", "_") for c in allowed_classes} | {str(c) for c in allowed_classes}
+
+    class_counts: dict[str, int] = {}
+    for class_dir in sorted(dataset_path.iterdir()):
+        if not class_dir.is_dir():
+            continue
+        class_name = class_dir.name
+        if target_allowed is not None and class_name not in target_allowed:
+            continue
+        samples_dir = class_dir / "samples"
+        count = 0
+        if samples_dir.exists():
+            for sample_dir in samples_dir.iterdir():
+                lm_file = sample_dir / "landmarks.npy"
+                if lm_file.exists():
+                    try:
+                        arr = np.load(lm_file)
+                        if arr.ndim == 3 and arr.shape[0] >= 5 and not np.isnan(arr).any():
+                            count += 1
+                    except Exception:
+                        pass
+        class_counts[class_name] = count
+
+    accepted = {k: v for k, v in class_counts.items() if v >= 2}
+    insufficient = {k: v for k, v in class_counts.items() if v == 1}
+    empty = {k: v for k, v in class_counts.items() if v == 0}
+    is_trainable = len(accepted) >= 2
+
+    return {
+        "total_classes": len(class_counts),
+        "class_counts": class_counts,
+        "accepted_classes": accepted,
+        "insufficient_classes": insufficient,
+        "empty_classes": empty,
+        "is_trainable": is_trainable,
+        "reason": f"تم العثور على {len(accepted)} فئات مستوفية للشروط" if is_trainable else "يتطلب النموذج فئتين على الأقل (عينتان لكل فئة)",
+    }
+
+
 def load_sequence_dataset(
     dataset_path: str | Path,
     max_seq_len: int = 60,
     min_seq_len: int = 5,
     augmenter: Optional[DatasetAugmenter] = None,
     augment_multiplier: int = 1,
+    allowed_classes: Optional[set[str] | list[str]] = None,
 ) -> tuple[list[np.ndarray], np.ndarray]:
     """Load sequential landmark data from a structured dataset.
 
@@ -51,6 +110,10 @@ def load_sequence_dataset(
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset not found: {dataset_path}")
 
+    target_allowed = None
+    if allowed_classes is not None:
+        target_allowed = {str(c).replace(" ", "_") for c in allowed_classes} | {str(c) for c in allowed_classes}
+
     X_list: list[np.ndarray] = []
     y_list: list[str] = []
 
@@ -59,6 +122,8 @@ def load_sequence_dataset(
             continue
 
         class_name = class_dir.name
+        if target_allowed is not None and class_name not in target_allowed:
+            continue
         samples_dir = class_dir / "samples"
 
         if not samples_dir.exists():
@@ -125,6 +190,8 @@ def train_dynamic_model(
     split_manager: Optional[DatasetSplitManager] = None,
     split_name: Optional[str] = None,
     dialect: str = "iraqi",
+    progress_callback: Optional[Callable[[int, int, float, float], None]] = None,
+    allowed_classes: Optional[set[str] | list[str]] = None,
 ) -> dict:
     """Train, evaluate, and save the best dynamic gesture model.
 
@@ -139,10 +206,16 @@ def train_dynamic_model(
         split_manager: Optional split manager for test set separation.
         split_name: Split manifest name to load.
         dialect: Dialect name for model registry.
+        progress_callback: Optional progress callback (epoch, total, loss, val_loss).
 
     Returns:
         Dict with training results and best model info.
     """
+    import json
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     print(f"Loading sequence dataset from: {dataset_path}")
 
     augmenter = DatasetAugmenter() if augment else None
@@ -150,8 +223,10 @@ def train_dynamic_model(
         dataset_path,
         augmenter=augmenter,
         augment_multiplier=augment_multiplier,
+        allowed_classes=allowed_classes,
     )
-    n_classes = len(set(labels))
+    unique_classes = sorted(list(set(labels)))
+    n_classes = len(unique_classes)
     print(f"Loaded {len(sequences)} sequences across {n_classes} classes "
           f"(augment={augment}, multiplier={augment_multiplier})")
 
@@ -167,7 +242,7 @@ def train_dynamic_model(
     recognizer = DynamicSignRecognizer(config)
 
     print(f"\nTraining architectures: {architectures or recognizer.SUPPORTED_ARCHS}")
-    all_metrics = recognizer.train(X, labels, architectures)
+    all_metrics = recognizer.train(X, labels, architectures, progress_callback=progress_callback)
 
     # Print results
     print(f"\n{'='*65}")
@@ -187,14 +262,45 @@ def train_dynamic_model(
     model_path = recognizer.save(output_dir)
     print(f"\n  Saved model: {model_path}")
 
+    # Generate and save vocabulary.json mapping trained classes
+    vocab_data = {
+        "metadata": {
+            "dialect": dialect,
+            "model_type": f"dynamic_{best_arch}",
+            "accuracy": best.accuracy if best else 0.0,
+            "classes": unique_classes,
+        },
+        "gestures": {},
+    }
+    for cls_name in unique_classes:
+        arabic_clean = str(cls_name).replace("_", " ")
+        vocab_data["gestures"][cls_name] = {
+            "arabic": arabic_clean,
+            "type": "dynamic",
+            "threshold": 0.70,
+        }
+    vocab_path = output_dir / "vocabulary.json"
+    with open(vocab_path, "w", encoding="utf-8") as f:
+        json.dump(vocab_data, f, ensure_ascii=False, indent=2)
+    print(f"  Saved vocabulary: {vocab_path}")
+
     # Evaluate using ModelEvaluator
     try:
         from sklearn.model_selection import train_test_split
         from sklearn.preprocessing import LabelEncoder
         le = LabelEncoder()
         y_enc = le.fit_transform(labels)
+        from collections import Counter
         X_pad = pad_sequences(sequences, sequence_length)
-        _, X_eval, _, y_eval = train_test_split(X_pad, y_enc, test_size=0.2, random_state=42, stratify=y_enc)
+        can_stratify = (
+            len(set(y_enc)) >= 2
+            and all(c >= 2 for c in Counter(y_enc).values())
+            and (int(len(X_pad) * 0.2) >= len(set(y_enc)))
+        )
+        if can_stratify:
+            _, X_eval, _, y_eval = train_test_split(X_pad, y_enc, test_size=0.2, random_state=42, stratify=y_enc)
+        else:
+            X_eval, y_eval = X_pad, y_enc
         import torch
         recognizer._model.eval()
         with torch.no_grad():
@@ -226,13 +332,16 @@ def train_dynamic_model(
         print(f"  Warning: Model registration failed: {e}")
 
     return {
+        "model_type": f"dynamic_{best_arch}",
         "architecture": best_arch,
         "accuracy": best.accuracy if best else 0.0,
         "f1_score": best.f1_score if best else 0.0,
         "inference_time_ms": best.inference_time_ms if best else 0.0,
         "model_path": str(model_path),
+        "vocab_path": str(vocab_path),
         "num_sequences": len(sequences),
         "num_classes": n_classes,
+        "classes": unique_classes,
         "all_metrics": {
             arch: {
                 "accuracy": m.accuracy,

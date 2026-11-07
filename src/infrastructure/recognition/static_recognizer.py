@@ -426,12 +426,15 @@ class StaticSignRecognizer:
                 random_state=self._config.random_state,
             )
         elif model_type == "mlp":
+            from collections import Counter
+            counts = Counter(y)
+            can_early_stop = len(X) >= 20 and all(c >= 2 for c in counts.values()) and (int(len(X) * 0.1) >= len(counts))
             self._model = MLPClassifier(
                 hidden_layer_sizes=self._config.mlp_hidden_layers,
                 max_iter=self._config.mlp_max_iter * 2,
                 learning_rate_init=self._config.mlp_learning_rate_init,
                 random_state=self._config.random_state,
-                early_stopping=True,
+                early_stopping=can_early_stop,
             )
 
         self._model.fit(X, y)

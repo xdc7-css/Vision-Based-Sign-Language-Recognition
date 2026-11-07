@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import logging
 from typing import Optional
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QRadioButton,
     QSizePolicy,
     QVBoxLayout,
@@ -185,34 +183,34 @@ class StatCard(QFrame):
         self.setObjectName("statCard")
         self.setStyleSheet("""
             QFrame#statCard {
-                background-color: #2d2d2d;
-                border: 1px solid #3c3c3c;
+                background-color: #181d24;
+                border: 1px solid #2b3441;
                 border-radius: 8px;
-                padding: 16px;
+                padding: 12px;
             }
             QFrame#statCard:hover {
-                background-color: #333333;
-                border-color: #007acc;
+                background-color: #1e242d;
+                border-color: #3b4656;
             }
         """)
-        self.setMinimumSize(160, 100)
+        self.setMinimumSize(140, 80)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(4)
 
         if self._icon_text:
             self._icon_label = QLabel(self._icon_text)
-            self._icon_label.setStyleSheet("font-size: 18px; color: #007acc; font-weight: 600;")
+            self._icon_label.setStyleSheet("font-size: 16px; color: #2563eb; font-weight: 600;")
             layout.addWidget(self._icon_label)
 
         self._title_label = QLabel(self._title)
-        self._title_label.setStyleSheet("font-size: 12px; color: #9d9d9d; font-weight: 500;")
+        self._title_label.setStyleSheet("font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;")
         layout.addWidget(self._title_label)
 
         self._value_label = QLabel("--")
         self._value_label.setObjectName("valueLabel")
-        self._value_label.setStyleSheet("font-size: 28px; font-weight: 700; color: #e0e0e0;")
+        self._value_label.setStyleSheet("font-size: 24px; font-weight: 700; color: #f8fafc;")
         layout.addWidget(self._value_label)
 
     @Slot(str)
@@ -234,98 +232,88 @@ class CameraPreview(QLabel):
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumSize(320, 240)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setStyleSheet("background-color: #1a1a1a; border: 1px solid #3c3c3c; border-radius: 4px;")
+        self.setStyleSheet("background-color: #0f1319; border: 1px solid #2b3441; border-radius: 8px;")
 
-        self._placeholder = self._create_placeholder()
+        self._placeholder = self._create_state_pixmap("Camera Standby", "Select camera and click Start Camera", "#2563eb")
         self.setPixmap(self._placeholder)
 
-    def _create_placeholder(self) -> QPixmap:
+    def _create_state_pixmap(self, title: str, subtitle: str, accent_color: str = "#2563eb") -> QPixmap:
+        """Create a clean, modern status card pixmap for standby/connecting/error states."""
         pixmap = QPixmap(640, 480)
-        pixmap.fill(Qt.black)
+        pixmap.fill(QColor("#0f1319"))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Center card
+        card_w, card_h = 400, 130
+        card_x = (640 - card_w) // 2
+        card_y = (480 - card_h) // 2
+
+        painter.setPen(QPen(QColor("#2b3441"), 1))
+        painter.setBrush(QBrush(QColor("#181d24")))
+        painter.drawRoundedRect(card_x, card_y, card_w, card_h, 8, 8)
+
+        # Accent dot
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor(accent_color)))
+        painter.drawEllipse(card_x + 28, card_y + 36, 12, 12)
+
+        # Title text
+        painter.setPen(QColor("#f8fafc"))
+        font_title = QFont()
+        font_title.setPointSize(14)
+        font_title.setBold(True)
+        painter.setFont(font_title)
+        painter.drawText(card_x + 50, card_y + 47, title)
+
+        # Subtitle text
+        painter.setPen(QColor("#94a3b8"))
+        font_sub = QFont()
+        font_sub.setPointSize(10)
+        painter.setFont(font_sub)
+        painter.drawText(card_x + 28, card_y + 85, subtitle)
+
+        painter.end()
         return pixmap
+
+    def _create_placeholder(self) -> QPixmap:
+        return self._create_state_pixmap("Camera Standby", "Select camera and click Start Camera", "#2563eb")
+
+    def set_standby(self, title: str = "Camera Standby", subtitle: str = "Select camera and click Start Camera") -> None:
+        self.setPixmap(self._create_state_pixmap(title, subtitle, "#2563eb"))
+
+    def set_connecting(self, title: str = "Connecting to Camera...", subtitle: str = "Initializing DirectShow video capture") -> None:
+        self.setPixmap(self._create_state_pixmap(title, subtitle, "#f59e0b"))
+
+    def set_error(self, title: str = "Camera Error", subtitle: str = "Failed to acquire frames from video source") -> None:
+        self.setPixmap(self._create_state_pixmap(title, subtitle, "#ef4444"))
 
     @Slot(np.ndarray)
     def display_frame(self, frame: np.ndarray) -> None:
-        """Display an RGB numpy array as a scaled image."""
-        if frame is None or frame.size == 0:
+        """Display an RGB numpy array as a scaled image with deep memory copy."""
+        if frame is None or getattr(frame, "size", 0) == 0:
             return
 
-        h, w, ch = frame.shape
-        bytes_per_line = ch * w
-        qimage = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        try:
+            if not getattr(frame.flags, "c_contiguous", False):
+                frame = np.ascontiguousarray(frame)
 
-        scaled = qimage.scaled(
-            self.width(), self.height(),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
-        )
-        self.setPixmap(QPixmap.fromImage(scaled))
+            h, w, ch = frame.shape
+            bytes_per_line = ch * w
+            qimage = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888).copy()
 
+            target_w = max(self.width(), 320)
+            target_h = max(self.height(), 240)
+            scaled = qimage.scaled(
+                target_w, target_h,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+            self.setPixmap(QPixmap.fromImage(scaled))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error rendering frame in CameraPreview: {e}")
 
-# ─── Log Viewer ────────────────────────────────────────────────────────
-
-
-class LogViewer(QPlainTextEdit):
-    """Real-time log display with color-coded levels and filtering."""
-
-    LEVEL_COLORS = {
-        "debug": "#9d9d9d",
-        "info": "#e0e0e0",
-        "warning": "#cca700",
-        "error": "#f14c4c",
-        "critical": "#ff0000",
-    }
-
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self.setReadOnly(True)
-        self.setMaximumBlockCount(1000)
-        self.setLineWrapMode(QPlainTextEdit.NoWrap)
-        self._min_level: int = logging.DEBUG
-
-    @Slot(str, str)
-    def append_log(self, level: str, message: str) -> None:
-        import logging
-
-        level_map = {
-            "debug": logging.DEBUG,
-            "info": logging.INFO,
-            "warning": logging.WARNING,
-            "error": logging.ERROR,
-            "critical": logging.CRITICAL,
-        }
-        if level_map.get(level, logging.DEBUG) < self._min_level:
-            return
-
-        color = self.LEVEL_COLORS.get(level, "#e0e0e0")
-        timestamp = __import__("datetime").datetime.now().strftime("%H:%M:%S")
-        formatted = f'<span style="color: {color};">[{timestamp}] [{level.upper()}] {message}</span>'
-        self.appendHtml(formatted)
-
-    def set_min_level(self, level: int) -> None:
-        self._min_level = level
-
-    def clear_logs(self) -> None:
-        self.clear()
-
-    def log_handler(self) -> logging.Handler:
-        """Return a logging.Handler that feeds into this widget."""
-        handler = _LogViewerHandler(self)
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        return handler
-
-
-class _LogViewerHandler(logging.Handler):
-    """Bridge between Python logging and LogViewer widget."""
-
-    def __init__(self, viewer: LogViewer) -> None:
-        super().__init__()
-        self._viewer = viewer
-
-    def emit(self, record: logging.LogRecord) -> None:
-        level = record.levelname.lower()
-        message = self.format(record)
-        self._viewer.append_log(level, message)
 
 
 # ─── Video File Path Selector ──────────────────────────────────────────

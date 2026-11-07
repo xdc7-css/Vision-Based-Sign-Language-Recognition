@@ -65,13 +65,23 @@ class CaptureSession:
             "height": result.image_height,
         }
 
+        # Select primary hand (prefer Right, otherwise first detected hand)
+        primary_hand = None
         for hand in result.hands:
-            lm_array = np.array([[lm.x, lm.y, lm.z] for lm in hand.landmarks], dtype=np.float32)
+            if getattr(hand.handedness, "value", "") == "Right":
+                primary_hand = hand
+                break
+        if primary_hand is None and result.hands:
+            primary_hand = result.hands[0]
+
+        if primary_hand is not None:
+            lm_array = np.array([[lm.x, lm.y, lm.z] for lm in primary_hand.landmarks], dtype=np.float32)
             self.landmarks.append(lm_array)
 
-            frame_data[f"landmarks_{hand.handedness.value}"] = lm_array.tolist()
-            frame_data["handedness"] = hand.handedness.value
-            frame_data["confidence"] = hand.confidence
+            handedness_str = getattr(primary_hand.handedness, "value", "Right")
+            frame_data[f"landmarks_{handedness_str}"] = lm_array.tolist()
+            frame_data["handedness"] = handedness_str
+            frame_data["confidence"] = primary_hand.confidence
 
         self.frames.append(frame_data)
 
@@ -206,6 +216,18 @@ class DatasetCollector:
         }
         with open(sample_dir / "metadata.json", "w", encoding="utf-8") as f:
             json.dump(meta_json, f, indent=2, ensure_ascii=False)
+
+        # Verify disk persistence and integrity
+        try:
+            loaded_lm = np.load(sample_dir / "landmarks.npy")
+            if loaded_lm.size == 0 or np.isnan(loaded_lm).any():
+                import shutil
+                shutil.rmtree(sample_dir, ignore_errors=True)
+                return None
+        except Exception:
+            import shutil
+            shutil.rmtree(sample_dir, ignore_errors=True)
+            return None
 
         return sample_dir
 

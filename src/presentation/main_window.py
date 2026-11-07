@@ -1,9 +1,19 @@
+"""Primary application window with a clean, modern, student-friendly desktop layout.
+
+Provides 4 primary navigation pages:
+1. Recognition (Default Home Viewport)
+2. Dataset Studio (Gesture Recording & Management)
+3. Model Training (Training & Performance Evaluation)
+4. Settings (Camera Hardware, Models, Subtitle Overlay, Audio)
+"""
+
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
@@ -11,8 +21,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QStatusBar,
-    QTabWidget,
     QSystemTrayIcon,
+    QTabWidget,
     QWidget,
 )
 
@@ -30,9 +40,7 @@ from src.infrastructure.overlay_system import OverlayManager
 from src.infrastructure.recognition.hybrid_pipeline import HybridRecognitionPipeline
 from src.infrastructure.text_builder import ArabicTextBuilder
 from src.presentation.tabs.analytics import AnalyticsTab
-from src.presentation.tabs.dashboard import DashboardTab
 from src.presentation.tabs.dataset import DatasetCollectionTab
-from src.presentation.tabs.logs import LogsTab
 from src.presentation.tabs.overlay import OverlayTab
 from src.presentation.tabs.recognition import RecognitionTab
 from src.presentation.tabs.settings import SettingsTab
@@ -40,9 +48,9 @@ from src.presentation.tabs.training import ModelTrainingTab
 
 
 class MainWindow(QMainWindow):
-    """Primary application window with tabbed interface — 8 tabs total."""
+    """Primary application window with clean 4-page navigation."""
 
-    WINDOW_TITLE = "ArSL Translation Overlay System"
+    WINDOW_TITLE = "Vision-Based Sign Language Recognition"
     DEFAULT_WIDTH = 1280
     DEFAULT_HEIGHT = 800
 
@@ -75,6 +83,7 @@ class MainWindow(QMainWindow):
         self._overlay_manager = overlay_manager
         self._analytics = analytics
         self._optimizer = optimizer
+        self._logger = logging.getLogger(__name__)
 
         self._setup_window()
         self._setup_menu_bar()
@@ -83,40 +92,36 @@ class MainWindow(QMainWindow):
         self._setup_system_tray()
         self._connect_signals()
 
-        # If no trained models exist for the active dialect, open Dataset tab by default
-        has_trained_model = False
-        if self._dialect_manager and self._dialect_manager.active_dialect_config:
-            from pathlib import Path
-            model_p = Path(self._dialect_manager.active_dialect_config.model_path)
-            if (model_p / "static_model.pkl").exists() or (model_p / "dynamic_model.pt").exists():
-                has_trained_model = True
-        if not has_trained_model:
-            self._tab_widget.setCurrentIndex(1)  # Dataset Tab
+        # Start directly on Recognition as Home page
+        self._tab_widget.setCurrentIndex(0)
 
     # ── Setup ──────────────────────────────────────────────────────
 
     def _setup_window(self) -> None:
         self.setWindowTitle(self.WINDOW_TITLE)
-        self.setMinimumSize(1024, 700)
+        self.setMinimumSize(1024, 680)
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
 
         screen = QApplication.primaryScreen().geometry()
         x = (screen.width() - self.DEFAULT_WIDTH) // 2
         y = (screen.height() - self.DEFAULT_HEIGHT) // 2
-        self.move(x, y)
+        self.move(max(0, x), max(0, y))
 
     def _setup_menu_bar(self) -> None:
         menubar = self.menuBar()
 
         # File menu
         file_menu = menubar.addMenu("&File")
-        self._select_source_action = QAction("Select Video Source...", self)
-        self._select_source_action.setShortcut("Ctrl+O")
+        self._select_source_action = QAction("Live Recognition View", self)
+        self._select_source_action.setShortcut("Ctrl+1")
+        self._select_source_action.triggered.connect(lambda: self._tab_widget.setCurrentIndex(0))
         file_menu.addAction(self._select_source_action)
-        file_menu.addSeparator()
+
         self._settings_action = QAction("Preferences...", self)
         self._settings_action.setShortcut("Ctrl+,")
+        self._settings_action.triggered.connect(lambda: self._tab_widget.setCurrentIndex(3))
         file_menu.addAction(self._settings_action)
+
         file_menu.addSeparator()
         self._quit_action = QAction("Exit", self)
         self._quit_action.setShortcut("Ctrl+Q")
@@ -125,17 +130,18 @@ class MainWindow(QMainWindow):
 
         # View menu
         view_menu = menubar.addMenu("&View")
-        self._toggle_overlay_action = QAction("Toggle Overlay", self)
+        self._toggle_overlay_action = QAction("Toggle Desktop Subtitles", self)
         self._toggle_overlay_action.setShortcut("Ctrl+T")
         view_menu.addAction(self._toggle_overlay_action)
         view_menu.addSeparator()
+
         self._fullscreen_action = QAction("Toggle Fullscreen", self)
         self._fullscreen_action.setShortcut("F11")
         self._fullscreen_action.triggered.connect(self._toggle_fullscreen)
         view_menu.addAction(self._fullscreen_action)
 
-        # Dialect menu
-        dialect_menu = menubar.addMenu("&Dialect")
+        # Dialect / Model menu
+        dialect_menu = menubar.addMenu("&Model")
         self._dialect_actions: dict[str, QAction] = {}
         from src.domain.dialect import DIALECT_DISPLAY_NAMES
         for did, display in DIALECT_DISPLAY_NAMES.items():
@@ -146,7 +152,7 @@ class MainWindow(QMainWindow):
 
         # Help menu
         help_menu = menubar.addMenu("&Help")
-        self._about_action = QAction("About ArSL Overlay", self)
+        self._about_action = QAction("About Sign Language Recognition", self)
         self._about_action.triggered.connect(self._show_about)
         help_menu.addAction(self._about_action)
 
@@ -156,38 +162,33 @@ class MainWindow(QMainWindow):
         self._tab_widget.setDocumentMode(True)
         self._tab_widget.setMovable(False)
 
-        # Create tabs (8 tabs total)
-        self._dashboard_tab = DashboardTab(self._state)
-        self._dataset_tab = DatasetCollectionTab(self._state, self._source_use_cases)
-        self._training_tab = ModelTrainingTab(
-            self._state,
-            dialect_manager=self._dialect_manager,
-            pipeline=self._pipeline,
-        )
-
+        # 4 Primary Application Pages
         self._recognition_tab = RecognitionTab(
-            self._state, self._source_use_cases,
+            self._state,
+            self._source_use_cases,
             pipeline=self._pipeline,
             text_builder=self._text_builder,
             dialect_manager=self._dialect_manager,
             analytics=self._analytics,
             optimizer=self._optimizer,
         )
+        self._dataset_tab = DatasetCollectionTab(self._state, self._source_use_cases)
+        self._training_tab = ModelTrainingTab(
+            self._state,
+            dialect_manager=self._dialect_manager,
+            pipeline=self._pipeline,
+        )
+        self._settings_tab = SettingsTab(self._state)
 
+        # Preserved secondary modules (accessible via settings or tests)
         self._overlay_tab = OverlayTab(self._state, overlay_manager=self._overlay_manager)
         self._analytics_tab = AnalyticsTab(engine=self._analytics)
-        self._settings_tab = SettingsTab(self._state)
-        self._logs_tab = LogsTab(self._state)
 
-        # Add tabs
-        self._tab_widget.addTab(self._dashboard_tab, "📊  Dashboard")
-        self._tab_widget.addTab(self._dataset_tab, "📷  Dataset")
-        self._tab_widget.addTab(self._training_tab, "🧠  Training")
-        self._tab_widget.addTab(self._recognition_tab, "🎯  Recognition")
-        self._tab_widget.addTab(self._overlay_tab, "🔲  Overlay")
-        self._tab_widget.addTab(self._analytics_tab, "📈  Analytics")
-        self._tab_widget.addTab(self._settings_tab, "⚙  Settings")
-        self._tab_widget.addTab(self._logs_tab, "📋  Logs")
+        # Add 4 Primary Tabs with clean labels
+        self._tab_widget.addTab(self._recognition_tab, "Recognition")
+        self._tab_widget.addTab(self._dataset_tab, "Dataset Studio")
+        self._tab_widget.addTab(self._training_tab, "Model Training")
+        self._tab_widget.addTab(self._settings_tab, "Settings")
 
         self.setCentralWidget(self._tab_widget)
 
@@ -195,23 +196,23 @@ class MainWindow(QMainWindow):
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
 
-        self._status_label = QLabel("Ready")
+        self._status_label = QLabel("System Ready")
         self._status_bar.addWidget(self._status_label, stretch=1)
 
         self._fps_label = QLabel("FPS: --")
-        self._fps_label.setStyleSheet("padding: 0 12px;")
+        self._fps_label.setStyleSheet("padding: 0 10px; color: #94a3b8;")
         self._status_bar.addPermanentWidget(self._fps_label)
 
-        self._latency_label = QLabel("Delay: -- ms")
-        self._latency_label.setStyleSheet("padding: 0 12px;")
+        self._latency_label = QLabel("Latency: -- ms")
+        self._latency_label.setStyleSheet("padding: 0 10px; color: #94a3b8;")
         self._status_bar.addPermanentWidget(self._latency_label)
 
-        self._source_label = QLabel("Source: None")
-        self._source_label.setStyleSheet("padding: 0 12px;")
+        self._source_label = QLabel("Camera: Standby")
+        self._source_label.setStyleSheet("padding: 0 10px; color: #94a3b8;")
         self._status_bar.addPermanentWidget(self._source_label)
 
-        self._dialect_label = QLabel("Dialect: Iraqi")
-        self._dialect_label.setStyleSheet("padding: 0 12px;")
+        self._dialect_label = QLabel("Model: KArSL-502 / Iraqi")
+        self._dialect_label.setStyleSheet("padding: 0 10px; color: #14b8a6; font-weight: 500;")
         self._status_bar.addPermanentWidget(self._dialect_label)
 
     def _setup_system_tray(self) -> None:
@@ -219,14 +220,14 @@ class MainWindow(QMainWindow):
 
         if QSystemTrayIcon.isSystemTrayAvailable():
             self._tray_icon = QSystemTrayIcon(self)
-            self._tray_icon.setToolTip("ArSL Translation Overlay")
+            self._tray_icon.setToolTip("Arabic Sign Language Recognition")
 
             tray_menu = QMenu()
-            show_action = QAction("Show Window", self)
+            show_action = QAction("Show Application", self)
             show_action.triggered.connect(self.show_and_raise)
             tray_menu.addAction(show_action)
 
-            toggle_action = QAction("Toggle Overlay", self)
+            toggle_action = QAction("Toggle Desktop Subtitles", self)
             toggle_action.triggered.connect(self._toggle_overlay_from_tray)
             tray_menu.addAction(toggle_action)
 
@@ -238,7 +239,6 @@ class MainWindow(QMainWindow):
             self._tray_icon.setContextMenu(tray_menu)
 
             try:
-                from PySide6.QtGui import QPixmap
                 pixmap = QPixmap(32, 32)
                 pixmap.fill(Qt.darkBlue)
                 self._tray_icon.setIcon(QIcon(pixmap))
@@ -254,17 +254,14 @@ class MainWindow(QMainWindow):
         self._state.pipeline_status_changed.connect(self._on_status_changed)
         self._state.fps_updated.connect(lambda f: self._fps_label.setText(f"FPS: {f:.1f}"))
         self._state.active_source_changed.connect(
-            lambda s: self._source_label.setText(f"Source: {s.display_name if s else 'None'}")
+            lambda s: self._source_label.setText(f"Camera: {s.display_name if s else 'Standby'}")
         )
         self._state.active_dialect_changed.connect(
-            lambda d: self._dialect_label.setText(f"Dialect: {d.display_name if d else 'None'}")
+            lambda d: self._dialect_label.setText(f"Model: {d.display_name if d else 'KArSL-502'}")
         )
         self._state.error_occurred.connect(self._on_error)
 
         self._toggle_overlay_action.triggered.connect(self._toggle_overlay_action_triggered)
-        self._select_source_action.triggered.connect(self._select_source)
-
-        # Tab switch → refresh content
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
 
     # ── Slots ──────────────────────────────────────────────────────
@@ -274,18 +271,22 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
+    def _on_tray_activated(self, reason: int) -> None:
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.show_and_raise()
+
     def _on_status_changed(self, status: str) -> None:
         self._status_label.setText(status.title())
-        if status == "streaming":
-            self._status_label.setStyleSheet("color: #4ec9b0;")
-        elif status == "error":
-            self._status_label.setStyleSheet("color: #f14c4c;")
+        if status.lower() in ("streaming", "active"):
+            self._status_label.setStyleSheet("color: #10b981; font-weight: 500;")
+        elif status.lower() == "error":
+            self._status_label.setStyleSheet("color: #ef4444; font-weight: 500;")
         else:
-            self._status_label.setStyleSheet("color: inherit;")
+            self._status_label.setStyleSheet("color: #94a3b8;")
 
     def _on_error(self, message: str) -> None:
-        self._status_label.setText(f"Error: {message}")
-        self._status_label.setStyleSheet("color: #f14c4c;")
+        self._status_label.setText(f"Notice: {message}")
+        self._status_label.setStyleSheet("color: #ef4444;")
 
     def _toggle_fullscreen(self) -> None:
         if self.isFullScreen():
@@ -302,31 +303,41 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         QMessageBox.about(
             self,
-            "About ArSL Overlay",
-            "<h2>Real-Time Arabic Sign Language Translation Overlay</h2>"
-            "<p>Version 1.0.0</p>"
-            "<p>A desktop application that translates Arabic Sign Language "
-            "into Arabic text in real time using computer vision and deep learning.</p>"
+            "About Sign Language Recognition",
+            "<h2>Vision-Based Sign Language Recognition</h2>"
+            "<p><b>Version:</b> 2.0.0 (Clean Architecture)</p>"
+            "<p>Real-time Arabic Sign Language recognition desktop system using MediaPipe keypoint tracking "
+            "and KArSL-502 Spatio-Temporal Transformer inference.</p>"
             "<hr>"
-            "<p><b>Modules:</b> GUI, Video Sources, Hand Detection, Motion Tracking, "
-            "Dataset Collection, Static/Dynamic/Word Recognition, Arabic Text Builder, "
-            "Dialect Manager (Iraqi/Saudi/Egyptian), Overlay System, Analytics</p>"
+            "<p><b>Features:</b> Native Windows DirectShow multi-camera support (HD Webcam & e2eSoft iVCam), "
+            "real-time sentence accumulation, Text-to-Speech audio output, transparent desktop subtitle overlay, "
+            "and dataset collection studio.</p>"
             "<p>Computer Engineering Graduation Project</p>",
         )
 
-    def _select_source(self) -> None:
-        self._tab_widget.setCurrentIndex(3)  # Recognition tab
-
-    def _on_tray_activated(self, reason: int) -> None:
-        if reason == QSystemTrayIcon.DoubleClick:
-            self.show_and_raise()
-
     def _on_tab_changed(self, index: int) -> None:
-        if index == 3:  # Recognition tab
+        """Handle tab switching and safely coordinate camera hardware ownership."""
+        if index == 0:  # Recognition tab
+            if hasattr(self, "_dataset_tab") and getattr(self._dataset_tab, "_is_streaming", False):
+                self._dataset_tab._stop_camera()
+            if hasattr(self, "_recognition_tab"):
+                self._recognition_tab._refresh_camera_list()
+                if hasattr(self._recognition_tab, "_update_custom_model_status_ui"):
+                    self._recognition_tab._update_custom_model_status_ui()
             self._refresh_dialect_menu()
-        elif index == 5:  # Analytics tab
-            if hasattr(self, '_analytics_tab'):
-                self._analytics_tab.start()
+        elif index == 1:  # Dataset Studio
+            if hasattr(self, "_recognition_tab") and getattr(self._recognition_tab, "_is_streaming", False):
+                self._recognition_tab._stop_camera()
+            if hasattr(self, "_dataset_tab"):
+                self._dataset_tab._refresh_camera_list()
+                self._dataset_tab._scan_and_populate_classes()
+        elif index == 2:  # Model Training
+            if hasattr(self, "_dataset_tab") and getattr(self._dataset_tab, "_is_streaming", False):
+                self._dataset_tab._stop_camera()
+            if hasattr(self, "_training_tab"):
+                self._training_tab._sync_active_dialect()
+                if hasattr(self._training_tab, "refresh_model_sync_status"):
+                    self._training_tab.refresh_model_sync_status()
 
     def _refresh_dialect_menu(self) -> None:
         """Update dialect menu check states based on active dialect."""
@@ -348,7 +359,7 @@ class MainWindow(QMainWindow):
         did_str = dialect_id.value if hasattr(dialect_id, "value") else str(dialect_id)
         if self._dialect_manager and self._dialect_manager.switch_dialect(dialect_id):
             cfg = self._dialect_manager.active_dialect_config
-            self._dialect_label.setText(f"Dialect: {cfg.display_name if cfg else did_str.title()}")
+            self._dialect_label.setText(f"Model: {cfg.display_name if cfg else did_str.title()}")
             self._refresh_dialect_menu()
             for d in getattr(self._state, "dialects", []):
                 if getattr(d, "dialect_id", "") == did_str:

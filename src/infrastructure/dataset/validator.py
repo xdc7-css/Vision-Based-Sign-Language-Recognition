@@ -108,8 +108,10 @@ class DatasetValidator:
                     num_frames = shape[0]
                     num_landmarks = shape[1]
 
-                    if num_frames < self.MIN_FRAMES:
-                        issues.append(f"Too few frames: {num_frames} < {self.MIN_FRAMES}")
+                    is_static = (num_frames == 1)
+                    required_min = 1 if is_static else self.MIN_FRAMES
+                    if num_frames < required_min:
+                        issues.append(f"Too few frames: {num_frames} < {required_min}")
                     if shape[1] != self.MIN_LANDMARKS:
                         issues.append(f"Wrong landmark count: {shape[1]} != {self.MIN_LANDMARKS}")
                     if shape[2] != self.LANDMARK_DIM:

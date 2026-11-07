@@ -5,6 +5,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+*.spec
 *.egg
 *.so
 .pytest_cache/
@@ -41,3 +42,4 @@ full_test_run.txt
 test_output.txt
 test_output_verbose.txt
 test_overlay_output.txt
+data/diagnostics/

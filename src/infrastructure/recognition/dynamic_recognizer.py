@@ -10,7 +10,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 
@@ -166,6 +166,7 @@ class DynamicSignRecognizer:
         X: np.ndarray,
         y: np.ndarray,
         architectures: Optional[list[str]] = None,
+        progress_callback: Optional[Callable[[int, int, float, float], None]] = None,
     ) -> dict[str, DynamicModelMetrics]:
         """Train all architectures on GPU if available.
 
@@ -199,19 +200,36 @@ class DynamicSignRecognizer:
         # Pad sequences to uniform length
         X_pad = self._pad_sequences(X)
 
-        # Train/val/test split (80/10/10)
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_pad, y_encoded,
-            test_size=self._config.test_size,
-            random_state=self._config.random_state,
-            stratify=y_encoded,
+        # Train/val/test split (80/10/10) with small-dataset fallback
+        from collections import Counter
+        class_counts = Counter(y_encoded)
+        can_stratify_test = (
+            len(class_counts) >= 2
+            and all(c >= 2 for c in class_counts.values())
+            and (int(len(X_pad) * self._config.test_size) >= n_classes)
         )
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_train, y_train,
-            test_size=0.125,  # 10% of total
-            random_state=self._config.random_state,
-            stratify=y_train,
-        )
+
+        if len(X_pad) >= 10 and can_stratify_test:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_pad, y_encoded,
+                test_size=self._config.test_size,
+                random_state=self._config.random_state,
+                stratify=y_encoded,
+            )
+            can_stratify_val = (
+                all(c >= 2 for c in Counter(y_train).values())
+                and (int(len(X_train) * 0.125) >= n_classes)
+            )
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_train, y_train,
+                test_size=0.125,
+                random_state=self._config.random_state,
+                stratify=y_train if can_stratify_val else None,
+            )
+        else:
+            X_train, y_train = X_pad, y_encoded
+            X_val, y_val = X_pad, y_encoded
+            X_test, y_test = X_pad, y_encoded
 
         # Convert to tensors
         X_train_t = torch.FloatTensor(X_train).to(device)
@@ -272,6 +290,10 @@ class DynamicSignRecognizer:
                 model.train()
 
                 scheduler.step(val_loss)
+
+                if progress_callback:
+                    avg_loss = epoch_loss / max(num_batches, 1)
+                    progress_callback(epoch + 1, self._config.epochs, avg_loss, val_loss)
 
                 # Early stopping
                 if val_loss < best_val_loss:

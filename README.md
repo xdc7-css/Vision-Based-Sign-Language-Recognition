@@ -8,7 +8,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-lightgrey.svg)]()
 [![GUI Framework](https://img.shields.io/badge/GUI-PySide6%20(Qt%206)-orange.svg)](https://wiki.qt.io/Qt_for_Python)
 [![Inference Engine](https://img.shields.io/badge/Inference-ONNX%20Runtime%20%7C%20PyTorch%20%7C%20Scikit--Learn-purple.svg)]()
-[![Tests](https://img.shields.io/badge/Tests-238%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-269%20Passed-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
@@ -50,12 +50,13 @@ This graduation project was designed, engineered, and evaluated by the following
 7. [Recognition Models & Machine Learning](#7-recognition-models--machine-learning)
 8. [Technology Stack](#8-technology-stack)
 9. [Application Usage & Quick Start](#9-application-usage--quick-start)
-10. [Custom Model Training & Evaluation](#10-custom-model-training--evaluation)
-11. [Project Directory Structure](#11-project-directory-structure)
-12. [Automated Testing & Verification](#12-automated-testing--verification)
-13. [Limitations & Development Roadmap](#13-limitations--development-roadmap)
-14. [Acknowledgments & Academic Citations](#14-acknowledgments--academic-citations)
-15. [License](#15-license)
+10. [Dataset Management & Pre-Trained Model Guide](#10-dataset-management--pre-trained-model-guide)
+11. [Custom Model Training & Evaluation (CLI Advanced)](#11-custom-model-training--evaluation-cli-advanced)
+12. [Project Directory Structure](#12-project-directory-structure)
+13. [Automated Testing & Verification](#13-automated-testing--verification)
+14. [Limitations & Development Roadmap](#14-limitations--development-roadmap)
+15. [Acknowledgments & Academic Citations](#15-acknowledgments--academic-citations)
+16. [License](#16-license)
 
 ---
 
@@ -459,13 +460,15 @@ flowchart TD
 
 ### 7.2 Custom Iraqi Dialect Models
 - **Trained Checkpoints:**
-  - `data/models/iraqi/static_model.pkl`: Multi-Layer Perceptron (`MLPClassifier`, 209 KB).
+  - `data/models/iraqi/static_model.pkl`: Multi-Layer Perceptron (`MLPClassifier`, 207 KB).
+  - `data/models/iraqi/static_mlp.pkl`: MLP Classifier backup checkpoint (207 KB).
   - `data/models/iraqi/static_svm.pkl`: Support Vector Classifier (`SVC`, 14 KB).
-  - `data/models/iraqi/classes.json`: `["السلام_عليكم", "لا", "نعم"]`.
+  - `data/models/iraqi/classes.json`: `["آسف", "أكل", "السلام_عليكم", "لا", "نعم", "نوم"]` (6 classes).
 - **Feature Vector:** 21 hand landmarks $\times 3 \text{ coordinates } (x, y, z) = 63 \text{ features}$.
-- **Accuracy Context & Transparency:**
-  > [!IMPORTANT]
-  > **Local Evaluation Transparency:** The local evaluation file (`data/models/iraqi/evaluation.json`) records **1.0 (100%)** accuracy. This metric was measured on an internal holdout split of the **177 captured samples** (`السلام_عليكم`: 50, `نعم`: 60, `لا`: 67) recorded in a consistent environment by a single user with synthetic landmark jitter augmentation. **This metric does not reflect open-world generalization across different signers, camera angles, or variable lighting conditions.**
+- **Dataset Context & Metrics:**
+  - **1,037 Static Samples** recorded across 6 vocabulary classes (`آسف`: 212, `أكل`: 159, `السلام_عليكم`: 300, `لا`: 67, `نعم`: 273, `نوم`: 26).
+  - **8 Dynamic Sequences** recorded across 4 motion classes (`أكل`: 4, `السلام_عليكم`: 1, `نعم`: 2, `نوم`: 1).
+  - Ready for immediate real-time inference without retraining.
 
 ---
 
@@ -518,19 +521,18 @@ flowchart TD
    - Both your built-in **`HD Webcam (Built-in Laptop Camera)`** and iPhone **`e2eSoft iVCam (iPhone Camera)`** appear simultaneously in the single **Camera** dropdown.
    - Switch between them instantaneously at any time without disconnecting hardware or restarting the application.
    - Click the **`🔄 Refresh`** button beside the dropdown to detect newly connected webcams or iVCam sessions.
-4. **Choose AI Recognition Mode:**
-   - **`🤟 Sign Language Recognition`:** Translates Arabic sign language using KArSL-502 (502 signs) or custom dialect models.
-   - **`📦 Object Detection (YOLOv8)`:** Independent real-time object detection identifying 80 physical objects with high-contrast bounding boxes.
-   - **`🔀 Combined Mode`:** Concurrently tracks hand landmarks, translates sign gestures, and detects physical objects.
-5. **Interactive Controls & Utilities:**
-   - **`🔗 Connect / 🔌 Disconnect`:** Establish or release camera feeds cleanly.
-   - **`▶ Start / ■ Stop Detection`:** Start or pause real-time AI inference.
-   - **`🪞 Mirror Camera`:** Flips the camera preview horizontally for intuitive user interaction.
-   - **`👁 Hand Landmarks / 📦 Bounding Boxes`:** Toggle visual overlays on or off.
+4. **Choose Sign Recognition Model:**
+   - **`KArSL-502 (502 Standard Signs)`:** Full Spatio-Temporal Transformer recognizing 502 isolated Arabic signs and common vocabulary.
+   - **`Iraqi Custom Classifier`:** Lightweight local classifier trained on custom regional dialect gestures.
+   - Click **`502 Signs List`** to inspect the complete searchable dictionary of all 502 supported Arabic signs.
+5. **Interactive Controls & Sentence Construction:**
+   - **`Start Camera / Stop Camera`:** Toggle real-time capture and AI inference with a single click.
+   - **`Show Landmarks`:** Toggle skeletal hand and pose visual overlays.
+   - **`Mirror Feed`:** Flips the camera preview horizontally for intuitive user interaction.
    - **`Resolution Selector`:** Switch between `640x480 (Fast)` and `1280x720 (HD)`.
-   - **`Confidence Slider`:** Dynamically tune threshold from 20% to 90%.
-   - **`📸 Screenshot`:** Instantly saves annotated frames to `data/captures/screenshot_YYYYMMDD_HHMMSS.png`.
-   - **`🔴 Record Video`:** Records live annotated feed into MP4 files (`data/captures/recording_YYYYMMDD_HHMMSS.mp4`) with a flashing `● REC` indicator.
+   - **`Sentence Builder`:** Recognized words accumulate in the Arabic text box. Use **`Speak (TTS)`** for speech output, **`Space`**, **`Delete Word`**, and **`Clear`**.
+   - **`Toggle Desktop Subtitles`:** Enable or disable floating transparent subtitles directly from the recognition viewport.
+   - **`Screenshot`:** Instantly saves annotated frames to `data/captures/`.
 
 ---
 
@@ -558,31 +560,86 @@ The system supports smartphones (Android and iPhone/iOS) as primary video source
 
 ---
 
-## 10. Custom Model Training & Evaluation
+## 10. Dataset Management & Pre-Trained Model Guide
 
-The system allows recording your own gestures and training custom dialect classifiers directly from the GUI or the command line.
+This repository contains **100% of the actual collected training samples and pre-trained models**. After cloning the repository, you do **not** need to collect data or retrain the system; the pre-trained Iraqi Custom Classifier and KArSL-502 models work immediately.
 
-### 10.1 Recording New Samples via Dataset Studio
+### 10.1 Where Files are Stored
+
+| Asset | Storage Location | Files & Description |
+| :--- | :--- | :--- |
+| **Static Sign Samples** | `data/datasets/words/<class_name>/samples/<sample_id>/` | **1,037 samples** across 6 classes (`آسف`, `أكل`, `السلام_عليكم`, `لا`, `نعم`, `نوم`). Each sample directory contains `landmarks.npy` (21×3 normalized coordinates) and `metadata.json`. |
+| **Dynamic Sign Sequences** | `data/datasets/dynamic/<class_name>/samples/<sample_id>/` | **8 sequences** across 4 motion classes (`أكل`, `السلام_عليكم`, `نعم`, `نوم`). Contains multi-frame landmark arrays and metadata. |
+| **Vocabulary Registry** | `data/vocabulary/gesture_classes.json` | Persistent JSON registry tracking all active and archived classes, categories, timestamps, and stable IDs. |
+| **Iraqi Custom Classifier** | `data/models/iraqi/` | Pre-trained Scikit-learn MLP (`static_model.pkl`, `static_mlp.pkl`, 207 KB), SVM (`static_svm.pkl`, 14 KB), `classes.json`, `vocabulary.json`, and `evaluation.json`. |
+| **KArSL-502 Foundation Model** | `data/models/karsl/` | Spatio-Temporal Transformer ONNX model (`karsl_502.onnx`, 6.99 MB) and 502 bilingual labels (`labels.json`). |
+| **MediaPipe Vision Tasks** | `data/models/karsl/` & `data/models/general/` | Offline vision models: `hand_landmarker.task` (7.46 MB), `pose_landmarker.task` (8.96 MB), `face_landmarker.task` (3.58 MB). |
+
+### 10.2 How to Clone the Repository
+Clone the repository using Git:
+```powershell
+git clone https://github.com/xdc7-css/Vision-Based-Sign-Language-Recognition.git "X:\arabic sign language"
+cd "X:\arabic sign language"
+```
+
+> [!NOTE]
+> **Git LFS Details:** All essential active dataset samples (`.npy`, `.json`), trained Iraqi checkpoints (`.pkl`), and KArSL-502 ONNX models are under 10 MB and are tracked **directly in standard Git**. You can clone and run the system without installing Git LFS or consuming LFS data quotas. (Historical reference materials in `external/karsl_reference/` use Git LFS).
+
+### 10.3 How to Launch the Application
+```powershell
+# 1. Activate your virtual environment
+.\.venv\Scripts\Activate.ps1
+
+# 2. Launch the desktop GUI
+python run.py
+```
+
+### 10.4 How to Use the Pre-Trained Iraqi Custom Classifier
+1. Open the application and switch to the **«🎯 Recognition»** tab.
+2. Select your camera (*HD Webcam* or *e2eSoft iVCam*) from the single unified dropdown.
+3. In the Model dropdown, select **`Iraqi Custom Classifier`**.
+4. Click **`Start Camera`**.
+5. Perform any of the 6 trained signs in front of the camera:
+   - **`آسف`** (Sorry)
+   - **`أكل`** (Eat)
+   - **`السلام عليكم`** (Peace be upon you / Greeting)
+   - **`لا`** (No)
+   - **`نعم`** (Yes)
+   - **`نوم`** (Sleep)
+6. The system displays real-time hand skeletal tracking with joint connections, recognizes the sign, displays confidence scores, and appends the sign to the sentence builder with optional Arabic text-to-speech feedback.
+
+### 10.5 How to Add, Rename, Archive, and Retrain Gestures
+The system gives you complete user control over the gesture classes via the **Dataset Studio**:
 1. Open the **«📷 Dataset»** tab.
-2. Enter the new class name in Arabic (e.g., `شكرا`).
-3. Select the dialect (e.g., `iraqi`, `saudi`, `egyptian`).
-4. Click **«Record Sample»** while performing the sign in front of the camera. The system records normalized landmark arrays into `data/datasets/words/<class_name>/samples/<sample_id>/landmarks.npy` with metadata.
+2. **Add Class:** Click **`Add Class`**, enter any Arabic word or letter (e.g. `مرحبا`), select the gesture category (*Static Word*, *Dynamic Gesture*, *Both*, or *Alphabet*), and optional description. Sample folders on disk are created automatically.
+3. **Rename Class:** Select an existing class and click **`Rename`**. It transactionally renames all sample folders on disk, updates all internal `metadata.json` files, and prevents duplicate collisions.
+4. **Safe Archiving vs. Permanent Deletion:** Click **`Delete`**:
+   - *Archive (Safe — Recommended):* Removes the class from active recognition and training, but keeps **100% of recorded sample files on disk** so data is never accidentally lost.
+   - *Permanently Delete:* Removes the class and permanently deletes recorded samples after checking an explicit confirmation checkbox.
+5. **Record Samples:** Select the target class, position your hand in front of the camera, and click **`Record Sample`** (for static frames) or **`Record Dynamic (30f)`** (for movement sequences).
+6. **Retrain Model:** Open the **«🎓 Training»** tab, check the **Model Sync Status** badge, select training parameters (model architecture: MLP, SVM, Random Forest, epochs, and augmentation), and click **`Start Model Training`**. The newly trained model is evaluated and automatically registered for immediate use in Recognition.
 
-### 10.2 Training Static Classifiers (CLI)
+---
+
+## 11. Custom Model Training & Evaluation (CLI Advanced)
+
+The system also provides standalone command-line scripts for batch training and academic evaluation:
+
+### 11.1 Training Static Classifiers (CLI)
 Train Random Forest, SVM, and MLP models with automatic cross-validation and best-model registration:
 
 ```powershell
 python -m src.models.train_static --dataset data/datasets/words --output data/models/iraqi/static --models rf svm mlp --dialect iraqi
 ```
 
-### 10.3 Training Dynamic Sequence Models (CLI)
+### 11.2 Training Dynamic Sequence Models (CLI)
 For multi-frame motion gestures:
 
 ```powershell
 python -m src.models.train_dynamic --dataset data/datasets/dynamic --output data/models/iraqi/dynamic --seq-len 30 --epochs 50 --dialect iraqi
 ```
 
-### 10.4 Standalone Model Evaluation (CLI)
+### 11.3 Standalone Model Evaluation (CLI)
 Evaluate any trained model checkpoint against a dataset directory:
 
 ```powershell
@@ -592,7 +649,7 @@ This generates a detailed classification report, confusion matrix, and latency p
 
 ---
 
-## 11. Project Directory Structure
+## 12. Project Directory Structure
 
 ```
 arabic sign language/
@@ -602,24 +659,36 @@ arabic sign language/
 │   └── user.yaml                         # Runtime user overrides
 ├── data/
 │   ├── datasets/
-│   │   ├── words/                        # 177 real captured static word samples
-│   │   │   ├── السلام_عليكم/             # 50 samples (.npy + metadata.json)
+│   │   ├── words/                        # 1,037 real captured static word samples
+│   │   │   ├── آسف/                      # 212 samples (.npy + metadata.json)
+│   │   │   ├── أكل/                      # 159 samples (.npy + metadata.json)
+│   │   │   ├── السلام_عليكم/             # 300 samples (.npy + metadata.json)
 │   │   │   ├── لا/                       # 67 samples (.npy + metadata.json)
-│   │   │   └── نعم/                      # 60 samples (.npy + metadata.json)
-│   │   ├── dynamic/                      # Multi-frame sequence samples
-│   │   └── iraqi/ / saudi/ / egyptian/   # Dialect partition directories
-│   └── models/
-│       ├── karsl/                        # Foundation KArSL-502 model & task bundles
-│       │   ├── karsl_502.onnx            # ST-Transformer ONNX model (7.33 MB)
-│       │   ├── labels.json               # 502 bilingual sign labels
-│       │   ├── hand_landmarker.task      # MediaPipe Hand Landmark model
-│       │   ├── pose_landmarker.task      # MediaPipe Pose Landmark model
-│       │   └── face_landmarker.task      # MediaPipe Face Landmark model
-│       └── iraqi/                        # Custom Iraqi dialect models
-│           ├── static_model.pkl          # Scikit-learn MLP classifier (209 KB)
-│           ├── static_svm.pkl            # Scikit-learn SVM classifier (14 KB)
-│           ├── classes.json              # Active class names
-│           └── evaluation.json           # Evaluation metrics record
+│   │   │   ├── نعم/                      # 273 samples (.npy + metadata.json)
+│   │   │   └── نوم/                      # 26 samples (.npy + metadata.json)
+│   │   └── dynamic/                      # 8 multi-frame sequence samples
+│   │       ├── أكل/                      # 4 sequences (.npy + metadata.json)
+│   │       ├── السلام_عليكم/             # 1 sequence (.npy + metadata.json)
+│   │       ├── نعم/                      # 2 sequences (.npy + metadata.json)
+│   │       └── نوم/                      # 1 sequence (.npy + metadata.json)
+│   ├── models/
+│   │   ├── karsl/                        # Foundation KArSL-502 model & task bundles
+│   │   │   ├── karsl_502.onnx            # ST-Transformer ONNX model (6.99 MB)
+│   │   │   ├── labels.json               # 502 bilingual sign labels
+│   │   │   ├── hand_landmarker.task      # MediaPipe Hand Landmark model (7.46 MB)
+│   │   │   ├── pose_landmarker.task      # MediaPipe Pose Landmark model (8.96 MB)
+│   │   │   └── face_landmarker.task      # MediaPipe Face Landmark model (3.58 MB)
+│   │   ├── general/
+│   │   │   └── hand_landmarker.task      # MediaPipe Hand Vision Task (7.46 MB)
+│   │   └── iraqi/                        # Pre-trained Custom Iraqi Dialect Models
+│   │       ├── static_model.pkl          # Scikit-learn MLP classifier (207 KB, 6 classes)
+│   │       ├── static_mlp.pkl            # MLP classifier checkpoint (207 KB)
+│   │       ├── static_svm.pkl            # Scikit-learn SVM classifier (14 KB)
+│   │       ├── classes.json              # Active class names ["آسف", "أكل", "السلام_عليكم", "لا", "نعم", "نوم"]
+│   │       ├── vocabulary.json           # Arabic vocabulary & metadata
+│   │       └── evaluation.json           # Evaluation metrics record
+│   └── vocabulary/
+│       └── gesture_classes.json          # Persistent Gesture Registry (single source of truth)
 ├── docs/                                 # Technical documentation
 │   ├── technical-specification.md        # Detailed engineering specifications
 │   ├── component-design.md               # Component interaction blueprints
@@ -645,6 +714,8 @@ arabic sign language/
 │   │   │   ├── hybrid_pipeline.py        # Recognition routing pipeline
 │   │   │   ├── static_recognizer.py      # Scikit-learn MLP/SVM/RF inference
 │   │   │   └── dynamic_recognizer.py     # PyTorch LSTM/GRU/Transformer inference
+│   │   ├── dataset/
+│   │   │   └── gesture_registry.py       # Persistent vocabulary CRUD & folder manager
 │   │   ├── video_source_engine.py        # Webcam, File, Screen, Window capture
 │   │   ├── overlay_system.py             # Win32 click-through transparent overlay
 │   │   ├── text_builder.py               # Arabic BiDi & sentence builder
@@ -657,19 +728,22 @@ arabic sign language/
 │   │   └── evaluator.py                  # Metric computation & confusion matrices
 │   └── presentation/                     # Presentation layer (PySide6 Qt 6)
 │       ├── main_window.py                # Main window & tab coordinator
-│       ├── dialogs/karsl_vocab_dialog.py # 502-sign searchable table dialog
+│       ├── dialogs/
+│       │   ├── dataset_dialogs.py        # Add/Edit/Delete class & sample inspector
+│       │   └── karsl_vocab_dialog.py     # 502-sign searchable table dialog
 │       ├── styles/dark_theme.qss         # Modern dark glassmorphic styling
-│       └── tabs/                         # 8 modular application tabs
+│       └── tabs/                         # Modular application tabs
 │           ├── dashboard.py              # Telemetry & system status
-│           ├── dataset.py                # Sample recording & inspection
-│           ├── training.py               # Hyperparameter selection & training
-│           ├── recognition.py            # Live camera recognition tab
-│           ├── overlay.py                # Floating subtitle controls
-│           ├── analytics.py              # Latency & historical metrics
-│           ├── settings.py               # Hardware & resolution settings
-│           └── logs.py                   # Real-time log viewer
-├── tests/                                # Automated test suite (208 tests)
+│           ├── dataset.py                # Dataset Studio with search, filters & CRUD
+│           ├── recognition.py            # Real-time camera recognition & sentence builder
+│           ├── training.py               # Hyperparameter selection & model sync status
+│           └── settings.py               # Camera, resolution, overlay & audio settings
+├── tests/                                # Automated test suite (269 tests)
+│   ├── test_gesture_classes_management.py# Full vocabulary CRUD, archiving & sync tests
+│   ├── test_dataset_studio_and_training.py# Studio UI, recording & training tests
 │   ├── test_karsl.py                     # KArSL-502 engine & TSNSampler tests
+│   ├── test_camera_dropdown_and_switching.py # DirectShow unified camera & switching tests
+│   ├── test_camera_stream_and_yolo.py    # Camera streaming & frame capture tests
 │   ├── test_recognition.py              # Recognition pipeline unit tests
 │   ├── test_hand_detection.py            # Hand tracking & normalization tests
 │   ├── test_text_builder.py              # Arabic BiDi & stabilization tests
@@ -678,6 +752,7 @@ arabic sign language/
 │       ├── test_pipeline_integration.py  # Full frame-to-prediction tests
 │       └── test_performance_benchmarks.py# Latency benchmark tests
 ├── ARCHITECTURE.md                       # Comprehensive architecture manual
+├── PROJECT_FILE_GUIDE.md                 # Exhaustive academic file guide for university presentation
 ├── README.md                             # Main landing documentation
 ├── requirements.txt                      # PIP dependency specifications
 ├── run                                   # Companion root-level launch script
@@ -688,17 +763,20 @@ arabic sign language/
 
 ---
 
-## 12. Automated Testing & Verification
+## 13. Automated Testing & Verification
 
-The project includes an automated test suite verifying domain contracts, computer vision adapters, inference engines, text shaping, and integration workflows.
+The project includes an automated test suite verifying domain contracts, computer vision adapters, inference engines, text shaping, gesture CRUD operations, and integration workflows.
 
-### 12.1 Running the Tests
+### 13.1 Running the Tests
 ```powershell
 # Run the complete test suite
 python -m pytest
 
 # Run with verbose output
 python -m pytest -v
+
+# Run gesture classes management tests specifically
+python -m pytest tests\test_gesture_classes_management.py -v
 
 # Run KArSL-502 engine verification tests specifically
 python -m pytest tests\test_karsl.py
@@ -707,50 +785,58 @@ python -m pytest tests\test_karsl.py
 python -m pytest tests\integration\
 ```
 
-### 12.2 Verified Test Output
+### 13.2 Verified Test Output
 ```
 ============================= test session starts =============================
-platform win32 -- Python 3.12.4, pytest-8.3.4, pluggy-1.5.0
-collected 208 items
+platform win32 -- Python 3.12.4, pytest-9.2.0, pluggy-1.7.0
+rootdir: X:\arabic sign language
+configfile: pyproject.toml
+plugins: anyio-4.16.0, cov-7.1.0
+collected 269 items
 
-tests/test_analytics.py .................                             [  8%]
-tests/test_dataset.py .........................                       [ 20%]
-tests/test_dialect_manager.py ..........                              [ 25%]
-tests/test_hand_detection.py ....................                     [ 34%]
-tests/test_hybrid_pipeline.py ................                        [ 42%]
-tests/test_karsl.py .........                                         [ 46%]
-tests/test_motion_tracking.py ...............                          [ 54%]
-tests/test_overlay.py ........                                        [ 57%]
-tests/test_recognition.py .....................                       [ 67%]
-tests/test_text_builder.py .............                              [ 74%]
-tests/integration/test_config_integration.py ......                   [ 76%]
-tests/integration/test_data_augmentation.py ......                    [ 79%]
-tests/integration/test_model_export.py ...                             [ 81%]
-tests/integration/test_performance_benchmarks.py ...........          [ 86%]
-tests/integration/test_pipeline_integration.py .....................  [100%]
+tests\integration\test_config_integration.py ........                    [  2%]
+tests\integration\test_data_augmentation.py ......                       [  5%]
+tests\integration\test_model_export.py ....                              [  6%]
+tests\integration\test_performance_benchmarks.py ..........              [ 10%]
+tests\integration\test_pipeline_integration.py ................          [ 16%]
+tests\test_analytics.py .............                                    [ 21%]
+tests\test_camera_black_preview_regression.py ........                   [ 24%]
+tests\test_camera_dropdown_and_switching.py .............                [ 28%]
+tests\test_camera_stream_and_yolo.py .............                       [ 33%]
+tests\test_dataset.py ....................                               [ 41%]
+tests\test_dataset_studio_and_training.py .........                      [ 44%]
+tests\test_dialect_manager.py ...............                            [ 50%]
+tests\test_gesture_classes_management.py .............                   [ 55%]
+tests\test_hand_detection.py ....................................        [ 68%]
+tests\test_hybrid_pipeline.py ............                               [ 72%]
+tests\test_karsl.py ....                                                 [ 74%]
+tests\test_motion_tracking.py ..............                             [ 79%]
+tests\test_overlay.py .............                                      [ 84%]
+tests\test_recognition.py ....................                           [ 91%]
+tests\test_recognition_custom_and_landmarks.py .....                     [ 93%]
+tests\test_text_builder.py .................                             [100%]
 
-======================== 208 passed, 2 warnings in 81.20s ========================
+====================== 269 passed, 4 warnings in 48.22s =======================
 ```
-- **Total Tests:** 208
-- **Passing:** 208 (100% pass rate)
+- **Total Tests:** 269
+- **Passing:** 269 (100% pass rate)
 - **Failures:** 0
-- **Execution Duration:** 81.20 seconds
+- **Execution Duration:** 48.22 seconds
 
 ---
 
-## 13. Limitations & Development Roadmap
+## 14. Limitations & Development Roadmap
 
 ### Known System Limitations
-1. **Custom Iraqi Vocabulary Scale:** The custom dialect pipeline currently contains trained weights for 3 signs (`السلام_عليكم`, `نعم`, `لا`). Additional custom gestures require recording training samples.
-2. **Dynamic Training Dataset Size:** The dynamic sequence training infrastructure is fully implemented, but only 1 dynamic sample is currently present in `data/datasets/dynamic/`. Users must collect dynamic sequence samples before training temporal models (LSTM/Transformer).
-3. **Lighting & Occlusion Sensitivity:** MediaPipe landmark estimation accuracy degrades under severe backlighting, low-light environments, rapid motion blur, and hand-over-face occlusions.
-4. **Platform Dependence of Hardware Click-Through:** Native click-through transparency relies on Windows User32 API attributes (`WS_EX_LAYERED | WS_EX_TRANSPARENT`). On Linux and macOS, the system falls back to a standard frameless translucent Qt window.
-5. **Continuous Sign Translation Boundary:** The system recognizes discrete signs and concatenates them using a temporal state machine with stability thresholds. It does not perform unsegmented continuous sentence decoding.
+1. **Custom Iraqi Vocabulary Scale:** The pre-trained custom dialect classifier contains weights for 6 gestures (`آسف`, `أكل`, `السلام_عليكم`, `لا`, `نعم`, `نوم`). Additional custom gestures can be added and recorded dynamically through the Dataset Studio tab.
+2. **Lighting & Occlusion Sensitivity:** MediaPipe landmark estimation accuracy degrades under severe backlighting, low-light environments, rapid motion blur, and hand-over-face occlusions.
+3. **Platform Dependence of Hardware Click-Through:** Native click-through transparency relies on Windows User32 API attributes (`WS_EX_LAYERED | WS_EX_TRANSPARENT`). On Linux and macOS, the system falls back to a standard frameless translucent Qt window.
+4. **Continuous Sign Translation Boundary:** The system recognizes discrete signs and concatenates them using a temporal state machine with stability thresholds. It does not perform unsegmented continuous sentence decoding.
 
 ### Project Roadmap
 - [ ] **Phase 1: Custom Dialect Expansion**
   - Collect and annotate at least 50 samples per class for 20+ everyday signs across Iraqi, Saudi, and Egyptian dialects.
-  - Implement dynamic sequence capture sessions in the Dataset Studio tab.
+  - Expand dynamic sequence capture sessions in the Dataset Studio tab.
 - [ ] **Phase 2: Hardware Acceleration Integration**
   - Integrate `onnxruntime-directml` for GPU-accelerated KArSL ST-Transformer inference on Intel, AMD, and NVIDIA hardware on Windows.
   - Optimize memory footprint during continuous multi-hour streaming.

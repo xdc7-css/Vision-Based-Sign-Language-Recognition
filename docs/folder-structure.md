@@ -1,6 +1,6 @@
 # Project Folder Structure
 
-> Auto-generated reference for the Real-Time ArSL Translation Overlay System
+> See [PROJECT_FILE_GUIDE.md](../PROJECT_FILE_GUIDE.md) for the exhaustive academic file-by-file catalog and real-time execution pipeline of the active implementation.
 
 ```
 real-time-arsl-overlay/

@@ -19,7 +19,6 @@ joblib>=1.3.0                       # Model serialization
 # ── Deep Learning ───────────────────────────────────────────────
 torch>=2.0.0                        # LSTM, GRU, Transformer (optional — training only)
 onnxruntime>=1.15.0                 # ONNX inference (optional)
-ultralytics>=8.0.0                  # YOLO object detection (optional)
 
 # ── Arabic Text ─────────────────────────────────────────────────
 arabic-reshaper>=2.1.0              # Arabic letter reshaping
