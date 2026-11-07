@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import struct
+import time
 
 import cv2
 import numpy as np
@@ -22,32 +25,84 @@ def get_recognition_service():
 async def ws_recognition(websocket: WebSocket) -> None:
     """Real-time sign language recognition stream.
     
-    Accepts binary JPEG bytes from browser webcam; returns JSON inference results and landmarks.
+    Accepts binary JPEG bytes (optionally with 16-byte header: uint64 frame_id, float64 client_time_ms).
+    Uses latest-frame-wins bounded queue with non-blocking worker thread.
+    Returns JSON inference results, state machine progress, and detailed timing telemetry.
     """
     await websocket.accept()
     rec_svc = get_recognition_service()
     
+    # Bounded queue of maxsize=1 enforces strict latest-frame-wins backpressure
+    frame_queue: asyncio.Queue[tuple[int, float, bytes]] = asyncio.Queue(maxsize=1)
+    dropped_frames = 0
+
+    async def consumer_loop():
+        nonlocal dropped_frames
+        while True:
+            frame_id, client_time_ms, raw_bytes = await frame_queue.get()
+            try:
+                t_dec = time.perf_counter()
+                nparr = np.frombuffer(raw_bytes, np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                decode_ms = (time.perf_counter() - t_dec) * 1000.0
+
+                if frame is not None:
+                    # Execute CPU-intensive computer vision pipeline in worker thread pool
+                    result = await asyncio.to_thread(
+                        rec_svc.process_frame,
+                        frame,
+                        frame_id,
+                        client_time_ms,
+                        decode_ms,
+                    )
+                    result["dropped_frames"] = dropped_frames
+                    await websocket.send_json(result)
+            except Exception as ex:
+                logger.debug(f"Frame processing error: {ex}")
+            finally:
+                frame_queue.task_done()
+
+    consumer_task = asyncio.create_task(consumer_loop())
+
     try:
         while True:
-            # Receive raw frame bytes (JPEG)
             data = await websocket.receive_bytes()
             if not data:
                 continue
 
-            # Decode JPEG in-memory
-            nparr = np.frombuffer(data, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if frame is None:
-                continue
+            # Parse optional 16-byte header: uint64 frame_id, float64 client_time_ms
+            frame_id = 0
+            client_time_ms = 0.0
+            if len(data) > 16 and not (data[0] == 0xFF and data[1] == 0xD8 and data[2] == 0xFF):
+                try:
+                    frame_id, client_time_ms = struct.unpack(">Qd", data[:16])
+                    jpeg_bytes = data[16:]
+                except Exception:
+                    jpeg_bytes = data
+            else:
+                jpeg_bytes = data
 
-            # Process frame through multimodal detector & recognizer
-            result = rec_svc.process_frame(frame)
-            await websocket.send_json(result)
+            # Latest-frame-wins policy: drop previous frame if still queued
+            if frame_queue.full():
+                try:
+                    frame_queue.get_nowait()
+                    frame_queue.task_done()
+                    dropped_frames += 1
+                except (asyncio.QueueEmpty, ValueError):
+                    pass
+
+            await frame_queue.put((frame_id, client_time_ms, jpeg_bytes))
 
     except WebSocketDisconnect:
         logger.debug("Recognition WebSocket client disconnected")
     except Exception as e:
         logger.warning(f"Error in recognition stream: {e}")
+    finally:
+        consumer_task.cancel()
+        try:
+            await consumer_task
+        except asyncio.CancelledError:
+            pass
         try:
             await websocket.close()
         except Exception:

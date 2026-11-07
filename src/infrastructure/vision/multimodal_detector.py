@@ -160,6 +160,7 @@ class MultimodalDetector:
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
 
         # ── 1. Hands Detection ───────────────────────────────────────
+        t_hands_start = time.perf_counter()
         detected_hands: list[Hand] = []
         if self._hands_model is not None:
             try:
@@ -170,8 +171,10 @@ class MultimodalDetector:
 
         # Separate left and right hands with spatial continuity
         left_hand, right_hand = self._assign_and_stabilize_hands(detected_hands)
+        hands_ms = (time.perf_counter() - t_hands_start) * 1000.0
 
         # ── 2. Face Detection ────────────────────────────────────────
+        t_face_start = time.perf_counter()
         face_lms: list[FaceLandmark] = []
         has_face = False
         raw_face_pts: list[tuple[int, int]] = []
@@ -198,8 +201,10 @@ class MultimodalDetector:
                     ]
             except Exception as e:
                 self._logger.debug(f"Face detect error: {e}")
+        face_ms = (time.perf_counter() - t_face_start) * 1000.0
 
         # ── 3. Optional Pose Detection ───────────────────────────────
+        t_pose_start = time.perf_counter()
         pose_lms: list[PoseLandmark] = []
         has_pose = False
         raw_pose_pts: list[tuple[int, int]] = []
@@ -227,6 +232,7 @@ class MultimodalDetector:
                         ]
                 except Exception as e:
                     self._logger.debug(f"Pose detect error: {e}")
+        pose_ms = (time.perf_counter() - t_pose_start) * 1000.0
 
         # ── 4. Compute Geometric Indicators & Relations ──────────────
         metrics = self._compute_geometric_metrics(raw_face_3d, left_hand, right_hand)
@@ -250,6 +256,11 @@ class MultimodalDetector:
             right_hand_to_face_dist=metrics["right_hand_to_face_dist"],
             timestamp=time.time(),
             processing_time_ms=elapsed_ms,
+            detection_timings={
+                "hands_ms": round(hands_ms, 2),
+                "face_ms": round(face_ms, 2),
+                "pose_ms": round(pose_ms, 2),
+            },
         )
 
         # Attach raw pixel points for visual rendering cache

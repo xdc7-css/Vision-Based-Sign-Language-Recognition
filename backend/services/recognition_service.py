@@ -17,6 +17,7 @@ from src.domain.multimodal import (
     ModalityMode,
     MULTIMODAL_SCHEMA_VERSION,
 )
+from src.domain.stabilizer import PredictionStabilizer
 from src.domain.text import GestureInputType, TextCommand
 from src.infrastructure.dataset.gesture_registry import sanitize_folder_name
 from src.infrastructure.recognition.multimodal_recognizer import MultimodalSignRecognizer
@@ -55,14 +56,22 @@ class RecognitionService:
         self.extractor = MultimodalFeatureExtractor(ModalityMode.TWO_HANDS_FACE)
         self.text_builder = ArabicTextBuilder()
 
-        # Telemetry & Smoothing
-        self._last_time = time.time()
+        # Telemetry & Prediction Stabilization
+        self._last_time = time.perf_counter()
         self._fps = 0.0
-        self._recent_predictions: list[str] = []
-        self._prediction_hold_count = 0
-        self._current_stable_sign = ""
-        self._current_stable_conf = 0.0
-        self._last_added_sign = ""
+        self.stabilizer = PredictionStabilizer(
+            min_confidence=confidence_threshold,
+            min_stable_frames=5,
+            agreement_threshold=0.80,
+            release_frames=3,
+            neutral_y_threshold=0.84,
+        )
+
+    def set_confidence_threshold(self, threshold: float) -> None:
+        """Update confidence threshold across recognizer and stabilizer."""
+        self.confidence_threshold = threshold
+        self.recognizer.confidence_threshold = threshold
+        self.stabilizer.min_confidence = threshold
 
     def reload_model(self) -> bool:
         """Reload active model from disk."""
@@ -93,11 +102,17 @@ class RecognitionService:
 
     # ── Frame Processing ─────────────────────────────────────────────────
 
-    def process_frame(self, frame: np.ndarray) -> dict[str, Any]:
-        """Process incoming video frame from browser, extract landmarks, and run inference."""
-        t0 = time.time()
-        
-        # Calculate FPS
+    def process_frame(
+        self,
+        frame: np.ndarray,
+        frame_id: int = 0,
+        client_time_ms: float = 0.0,
+        decode_ms: float = 0.0,
+    ) -> dict[str, Any]:
+        """Process incoming video frame, extract multimodal landmarks, stabilize predictions, and run inference."""
+        t0 = time.perf_counter()
+
+        # Calculate FPS with EWMA smoothing
         dt = t0 - self._last_time
         self._last_time = t0
         if dt > 0:
@@ -106,6 +121,10 @@ class RecognitionService:
 
         # Run multimodal detection
         mm_frame = self.detector.detect(frame)
+        det_timings = getattr(mm_frame, "detection_timings", {})
+        hands_ms = det_timings.get("hands_ms", 0.0)
+        face_ms = det_timings.get("face_ms", 0.0)
+        pose_ms = det_timings.get("pose_ms", 0.0)
 
         # Build landmark serialization for canvas overlay
         left_lms = None
@@ -140,44 +159,53 @@ class RecognitionService:
         has_hands = mm_frame.has_left or mm_frame.has_right
         rec_sign = ""
         rec_conf = 0.0
-        is_valid = False
+        infer_ms = 0.0
 
         if has_hands and self.recognizer.is_trained:
+            t_infer = time.perf_counter()
             res = self.recognizer.predict(mm_frame)
-            if res is not None and res.is_valid and res.arabic_text:
+            infer_ms = (time.perf_counter() - t_infer) * 1000.0
+
+            if res is not None and not res.is_rejected and res.arabic_text:
                 rec_sign = res.arabic_text
                 rec_conf = float(res.confidence)
-                is_valid = True
 
-        # Temporal smoothing: require sign to persist for stability
-        if is_valid and rec_conf >= self.confidence_threshold:
-            if rec_sign == self._current_stable_sign:
-                self._prediction_hold_count += 1
-            else:
-                self._current_stable_sign = rec_sign
-                self._current_stable_conf = rec_conf
-                self._prediction_hold_count = 1
+        # Obtain hand vertical anchor for resting detection
+        hand_y: Optional[float] = None
+        if mm_frame.right_hand is not None and mm_frame.right_hand.landmarks:
+            hand_y = float(mm_frame.right_hand.landmarks[0].y)
+        elif mm_frame.left_hand is not None and mm_frame.left_hand.landmarks:
+            hand_y = float(mm_frame.left_hand.landmarks[0].y)
 
-            # Auto-accumulate word to sentence buffer after 8 consecutive stable frames
-            if self._prediction_hold_count >= 8 and self._current_stable_sign != self._last_added_sign:
-                self.text_builder.process(TextCommand(GestureInputType.WORD, self._current_stable_sign))
-                self._last_added_sign = self._current_stable_sign
-        else:
-            if self._prediction_hold_count > 0:
-                self._prediction_hold_count -= 1
-            if self._prediction_hold_count == 0:
-                self._current_stable_sign = ""
-                self._current_stable_conf = 0.0
+        # Update prediction stabilizer state machine
+        stab_res = self.stabilizer.update(
+            raw_sign=rec_sign,
+            confidence=rec_conf,
+            has_hands=has_hands,
+            hand_y=hand_y,
+        )
 
-        latency_ms = (time.time() - t0) * 1000.0
+        # Only emit word into ArabicTextBuilder when confirmed by stabilizer
+        if stab_res.emitted_sign:
+            self.text_builder.process(TextCommand(GestureInputType.WORD, stab_res.emitted_sign))
+
+        backend_total_ms = (time.perf_counter() - t0) * 1000.0 + decode_ms
 
         return {
-            "recognized_sign": self._current_stable_sign or (rec_sign if rec_conf >= 0.5 else ""),
-            "confidence": round(self._current_stable_conf or rec_conf, 3),
-            "is_valid": is_valid and (rec_conf >= self.confidence_threshold),
+            "frame_id": frame_id,
+            "client_time_ms": client_time_ms,
+            "recognized_sign": stab_res.candidate_sign,
+            "confidence": round(stab_res.confidence, 3),
+            "is_valid": bool(stab_res.candidate_sign and stab_res.confidence >= self.confidence_threshold),
+            "state": stab_res.state.value,
+            "state_progress": round(stab_res.progress, 2),
+            "status_label": stab_res.status_label,
+            "is_holding": stab_res.is_holding,
+            "is_neutral": stab_res.is_neutral,
+            "emitted_word": stab_res.emitted_sign,
             "active_model": f"Multimodal Iraqi Classifier ({len(self.recognizer.classes)} signs)",
             "num_classes": len(self.recognizer.classes),
-            "latency_ms": round(latency_ms, 1),
+            "latency_ms": round(backend_total_ms, 1),
             "fps": round(self._fps, 1),
             "sentence": self.text_builder.full_text,
             "landmarks": {
@@ -193,6 +221,14 @@ class RecognitionService:
                 "has_pose": mm_frame.has_pose,
                 "mouth_openness": round(float(mm_frame.mouth_openness), 3),
                 "eyebrow_elevation": round(float(mm_frame.eyebrow_elevation), 3),
+            },
+            "perf": {
+                "decode_ms": round(decode_ms, 2),
+                "hands_ms": round(hands_ms, 2),
+                "face_ms": round(face_ms, 2),
+                "pose_ms": round(pose_ms, 2),
+                "infer_ms": round(infer_ms, 2),
+                "backend_total_ms": round(backend_total_ms, 1),
             },
         }
 
