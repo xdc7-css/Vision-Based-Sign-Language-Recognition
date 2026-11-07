@@ -1,0 +1,13 @@
+{
+  "sample_id": "739e77b5",
+  "gesture_type": "dynamic_phrase",
+  "gesture_label": "السلام عليكم",
+  "dialect": "iraqi",
+  "timestamp": 1794070633.911153,
+  "num_frames": 59,
+  "duration_seconds": 4.188008785247803,
+  "fps": 14.087840552729164,
+  "has_motion": true,
+  "schema_version": "v2_multimodal",
+  "modality_mode": "two_hands_face"
+}

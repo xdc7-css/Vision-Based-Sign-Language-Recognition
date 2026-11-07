@@ -266,22 +266,49 @@ You should see the following files listed:
 
 ---
 
-### Step 8: Launch the Application!
-Launch the complete desktop application with a single, simple command from the project root or **any project subdirectory** (`src/`, `src/models/`, `src/presentation/`, `tests/`, `docs/`, etc.):
+### Step 8: Launch the Application (Dual-Mode Interactive Launcher)
+Launch ArSL Studio with a single, simple command from the project root or **any project subdirectory** (`src/`, `src/models/`, `src/presentation/`, `tests/`, etc.):
 
 ```powershell
-# Primary one-command launcher (Recommended):
-python run.py
-
-# Or simply:
+# Primary interactive launcher (Works identically from root or subfolders):
 python run
+
+# Or:
+python run.py
 ```
 
+The terminal will present the interactive application menu:
+```text
+========================================
+ ArSL STUDIO
+ Arabic Sign Language Recognition
+========================================
+
+ Select Application Mode:
+
+ [1] Python Desktop — PySide6
+ [2] Local Web — React + FastAPI
+ [0] Exit
+
+ Enter your choice:
+```
+
+- **Option [1] Python Desktop — PySide6:** Launches the native Windows Qt 6 desktop application with DirectShow camera acquisition, 3-step workflow (Recognize, Teach Signs, Train Model), native Win32 subtitle overlay, and speech synthesis.
+- **Option [2] Local Web — React + FastAPI:** Starts the high-performance FastAPI server and serves the React + TypeScript + Tailwind CSS web application at `http://127.0.0.1:8000`, opening your default browser automatically. Features browser camera capture (`getUserMedia`), WebSocket landmark streaming, full gesture CRUD, multimodal dataset collection, real-time training telemetry, and RTL sentence building.
+- **Option [0] Exit:** Exits cleanly.
+
+#### Dedicated Windows Batch Launchers
+- **`RUN_WEB.bat`**: Double-click to start the local web application directly on `http://127.0.0.1:8000`.
+- **`BUILD_WEB.bat`**: Installs npm dependencies and compiles the React production bundle into `web/dist/`.
+
 > [!TIP]
-> **Zero Manual Setup & Automatic Virtual Environment Detection:**
-> - **Runs from Any Subdirectory:** You can run `python run` or `python run.py` directly from the project root or any subfolder (`src/`, `src/models/`, `tests/`, etc.) without typing `cd` to navigate to the project root.
-> - **Automatic `.venv` Selection:** If invoked via system Python, the launcher automatically detects the project's isolated Python 3.12 virtual environment at `.\.venv\Scripts\python.exe` and re-dispatches execution into it. You do **not** need to manually run `.\.venv\Scripts\Activate.ps1`.
-> - **Pre-Flight Asset Checks:** `run.py` verifies all required dependencies (`PySide6`, `mediapipe`, `onnxruntime`, `opencv-python`) and AI model checkpoints before launching the PySide6 Qt GUI.
+> **Zero Cloud Dependency & Local Shared Data:**
+> - Both application modes share the **exact same underlying data and models**:
+>   - Vocabulary: `data/vocabulary/gesture_classes.json`
+>   - Datasets: `data/datasets/words/` and `data/datasets/dynamic/`
+>   - Models: `data/models/multimodal/` and `data/models/karsl/`
+> - Any sign added or trained in the web interface is immediately accessible in the desktop application and vice versa.
+> - Runs 100% locally on your machine without requiring paid APIs, cloud servers, or internet access.
 
 #### Optional: Project-Wide Subdirectory Discovery Setup
 If you create new nested folders inside the project, you can run the one-time launcher configuration tool:

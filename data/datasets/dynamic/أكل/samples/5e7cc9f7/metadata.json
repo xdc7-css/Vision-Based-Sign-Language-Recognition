@@ -1,0 +1,13 @@
+{
+  "sample_id": "5e7cc9f7",
+  "gesture_type": "dynamic_phrase",
+  "gesture_label": "أكل",
+  "dialect": "iraqi",
+  "timestamp": 1794069512.8777046,
+  "num_frames": 22,
+  "duration_seconds": 1.5435619354248047,
+  "fps": 14.252748461269464,
+  "has_motion": true,
+  "schema_version": "v2_multimodal",
+  "modality_mode": "two_hands_face"
+}

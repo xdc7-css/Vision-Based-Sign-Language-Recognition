@@ -1,11 +1,102 @@
-# User overrides — values here override default.yaml at runtime
-# Leave empty to use defaults
-
+analytics:
+  chart_max_points: 60
+  update_interval_ms: 200
+  window_size: 60
+app:
+  log_level: INFO
+  name: ArSL Translation Overlay
+  version: 1.0.0
+dataset:
+  auto_validate: true
+  base_path: data/datasets
+  frames_per_sample: 30
+  include_color: true
+  include_depth: false
+  include_motion: true
 dialect:
   active: iraqi
-
-performance:
-  profile: balanced
-
+  paths:
+    egyptian:
+      dataset: data/datasets/egyptian
+      models: data/models/egyptian
+      vocabulary: data/models/egyptian/vocabulary.json
+    iraqi:
+      dataset: data/datasets/iraqi
+      models: data/models/iraqi
+      vocabulary: data/models/iraqi/vocabulary.json
+    saudi:
+      dataset: data/datasets/saudi
+      models: data/models/saudi
+      vocabulary: data/models/saudi/vocabulary.json
+logging:
+  backup_count: 3
+  file: data/logs/arsl.log
+  format: '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+  level: INFO
+  max_size_mb: 10
 overlay:
+  always_on_top: true
+  background_opacity: 0
+  border_width: 0
+  click_through: true
   enabled: true
+  font_name: Arial
+  font_size: 36
+  height: 120
+  line_spacing: 10
+  max_lines: 3
+  rtl_enabled: true
+  width: 600
+  x: 100
+  y: 100
+performance:
+  enable_motion_tracking: true
+  enable_temporal_smoothing: true
+  frame_skip: 0
+  hand_model_complexity: 0
+  input_height: 480
+  input_width: 640
+  max_hands: 1
+  min_detection_confidence: 0.7
+  min_tracking_confidence: 0.6
+  parallel_capture: true
+  profile: balanced
+  render_overlay: true
+recognition:
+  confidence_threshold:
+    static: 0.88
+  dynamic:
+    architectures:
+    - lstm
+    - gru
+    - transformer
+    batch_size: 32
+    epochs: 50
+    hidden_size: 128
+    num_layers: 2
+    sequence_length: 30
+  hybrid:
+    alphabet_threshold: 0.9
+    cooldown_frames: 20
+    dynamic_threshold: 0.75
+    enable_alphabet: true
+    enable_dynamic: true
+    enable_word: true
+    temporal_smoothing: 3
+    word_threshold: 0.85
+  static:
+    cross_validation_folds: 5
+    feature_scaling: standard
+    model_type: auto
+  word:
+    cooldown_frames: 30
+    min_confidence_alphabet: 0.9
+    min_confidence_dynamic: 0.75
+    min_confidence_static: 0.85
+    rejection_threshold: 0.5
+    temporal_smoothing_window: 5
+video:
+  default_camera_index: 0
+  default_source: webcam
+  file_loop: false
+  webcam_buffer_size: 2

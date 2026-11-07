@@ -1,0 +1,13 @@
+{
+  "sample_id": "1398ccf0",
+  "gesture_type": "dynamic_phrase",
+  "gesture_label": "نعم",
+  "dialect": "iraqi",
+  "timestamp": 1794070358.09409,
+  "num_frames": 22,
+  "duration_seconds": 1.751171588897705,
+  "fps": 12.56301789012472,
+  "has_motion": true,
+  "schema_version": "v2_multimodal",
+  "modality_mode": "two_hands_face"
+}
