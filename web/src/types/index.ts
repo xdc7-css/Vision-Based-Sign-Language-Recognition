@@ -89,15 +89,33 @@ export interface NormalizedPoint {
   z: number;
 }
 
+export interface RecognitionPerformanceMetrics {
+  decode_ms: number;
+  hands_ms: number;
+  face_ms: number;
+  pose_ms: number;
+  infer_ms: number;
+  backend_total_ms: number;
+}
+
 export interface RecognitionStreamResult {
+  frame_id?: number;
+  client_time_ms?: number;
   recognized_sign: string;
   confidence: number;
   is_valid: boolean;
+  state?: 'idle' | 'candidate' | 'confirmed' | 'emitted' | 'wait_for_release' | 'ready';
+  state_progress?: number;
+  status_label?: string;
+  is_holding?: boolean;
+  is_neutral?: boolean;
+  emitted_word?: string | null;
   active_model: string;
   num_classes: number;
   latency_ms: number;
   fps: number;
   sentence: string;
+  dropped_frames?: number;
   landmarks: {
     left_hand: NormalizedPoint[] | null;
     right_hand: NormalizedPoint[] | null;
@@ -112,5 +130,6 @@ export interface RecognitionStreamResult {
     mouth_openness: number;
     eyebrow_elevation: number;
   };
+  perf?: RecognitionPerformanceMetrics;
 }
 

@@ -129,6 +129,7 @@ class MultimodalFrame:
     right_hand_to_face_dist: float = 0.0
 
     geometric_indicators: dict[str, float] = field(default_factory=dict)
+    detection_timings: dict[str, float] = field(default_factory=dict)
     timestamp: float = 0.0
     processing_time_ms: float = 0.0
 
