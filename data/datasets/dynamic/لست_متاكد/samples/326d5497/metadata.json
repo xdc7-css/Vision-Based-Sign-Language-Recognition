@@ -1,0 +1,21 @@
+{
+  "sample_id": "326d5497",
+  "gesture_type": "dynamic",
+  "gesture_label": "لست متاكد",
+  "dialect": "iraqi",
+  "timestamp": 1794077052.3529198,
+  "num_frames": 1,
+  "num_hands": 1,
+  "handedness": "right",
+  "duration_seconds": 0.05,
+  "fps": 20.0,
+  "has_motion": false,
+  "total_distance": 0.0,
+  "motion_energy": 0.0,
+  "schema_version": "v2_multimodal",
+  "modality_mode": "two_hands_face",
+  "has_face": true,
+  "has_pose": false,
+  "has_left_hand": false,
+  "has_right_hand": true
+}

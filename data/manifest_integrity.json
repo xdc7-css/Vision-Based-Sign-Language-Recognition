@@ -1,0 +1,96 @@
+{
+  "manifest_version": "1.0.0",
+  "project": "Vision-Based Sign Language Recognition — ArSL Studio",
+  "timestamp": 1794077800,
+  "datasets": {
+    "total_samples": 4119,
+    "static_samples": 3836,
+    "dynamic_samples": 283,
+    "schemas": {
+      "v2_multimodal": 2384,
+      "legacy_v1_single_hand": 1045,
+      "v1_single_hand": 690
+    },
+    "static_classes": {
+      "آسف": 309,
+      "أكل": 639,
+      "ا": 60,
+      "احبكم": 620,
+      "اختبار_ويب_سريع": 0,
+      "السلام_عليكم": 420,
+      "انتظر": 419,
+      "تحديث_4872a0": 0,
+      "لا": 127,
+      "لدي_سؤال": 453,
+      "نعم": 493,
+      "نوم": 296
+    },
+    "dynamic_classes": {
+      "آسف": 7,
+      "أكل": 24,
+      "أهلا": 1,
+      "أين": 1,
+      "احبكم": 8,
+      "السلام_عليكم": 12,
+      "انتظر": 12,
+      "لا": 6,
+      "لدي_سؤال": 27,
+      "لست_متاكد": 156,
+      "نعم": 16,
+      "نوم": 13
+    }
+  },
+  "vocabulary": {
+    "total_active_classes": 57
+  },
+  "models": {
+    "data/models/karsl/karsl_502.onnx": {
+      "size_bytes": 7330073,
+      "sha256": "20d59d275983dd566bd520403441252ed1c4fded2d58bcddde58ccfa8d36d271"
+    },
+    "data/models/karsl/hand_landmarker.task": {
+      "size_bytes": 7819105,
+      "sha256": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"
+    },
+    "data/models/karsl/face_landmarker.task": {
+      "size_bytes": 3758596,
+      "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+    },
+    "data/models/karsl/pose_landmarker.task": {
+      "size_bytes": 9398198,
+      "sha256": "5134a3aad27a58b93da0088d431f366da362b44e3ccfbe3462b3827a839011b1"
+    },
+    "data/models/general/hand_landmarker.task": {
+      "size_bytes": 7819105,
+      "sha256": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"
+    },
+    "data/models/iraqi/static_model.pkl": {
+      "size_bytes": 212200,
+      "sha256": "df83e3ec95ff6300d5248646167e64ec2df3ce43a91bff8a701af092cabee250"
+    },
+    "data/models/iraqi/static_mlp.pkl": {
+      "size_bytes": 212200,
+      "sha256": "df83e3ec95ff6300d5248646167e64ec2df3ce43a91bff8a701af092cabee250"
+    },
+    "data/models/iraqi/static_svm.pkl": {
+      "size_bytes": 14150,
+      "sha256": "3169ee336d6040a51f5e669a4c96391ad7c3bbacc7ae6362f0578f708c471193"
+    },
+    "data/models/exported/static_model.pkl": {
+      "size_bytes": 212623,
+      "sha256": "af4025add6849d978442b3fa25d495ba4f7f69a272eb5fcdc5a12f84ec8e0446"
+    },
+    "data/models/exported/static_mlp.pkl": {
+      "size_bytes": 212623,
+      "sha256": "af4025add6849d978442b3fa25d495ba4f7f69a272eb5fcdc5a12f84ec8e0446"
+    },
+    "data/models/exported/static_svm.pkl": {
+      "size_bytes": 14150,
+      "sha256": "3169ee336d6040a51f5e669a4c96391ad7c3bbacc7ae6362f0578f708c471193"
+    },
+    "data/models/multimodal/static_model.pkl": {
+      "size_bytes": 579270,
+      "sha256": "96f3a2eb78e574f932c0515655b818f2bf9b4aa923fa24310662674b1eb84370"
+    }
+  }
+}

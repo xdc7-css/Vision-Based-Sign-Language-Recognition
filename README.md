@@ -8,7 +8,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-lightgrey.svg)]()
 [![GUI Framework](https://img.shields.io/badge/GUI-PySide6%20(Qt%206)-orange.svg)](https://wiki.qt.io/Qt_for_Python)
 [![Inference Engine](https://img.shields.io/badge/Inference-ONNX%20Runtime%20%7C%20PyTorch%20%7C%20Scikit--Learn-purple.svg)]()
-[![Tests](https://img.shields.io/badge/Tests-269%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-313%20Passed-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
@@ -154,21 +154,38 @@ The following breakdown provides exact measurements and verified estimates for s
 
 ## 4. Step-by-Step Installation & Execution Guide (Beginner-Friendly)
 
-This section provides complete, step-by-step instructions designed so that **anyone with a fresh Windows computer** can install, configure, and launch the system without prior programming knowledge.
+### 4.0 One-Click Automated Setup (Fastest Method)
 
-```
-+-----------------------------------------------------------------------------------+
-|                         INSTALLATION ROADMAP OVERVIEW                             |
-|                                                                                   |
-|  [Step 1: Install Python 3.12] ──> [Step 2: Get Code] ──> [Step 3: Open Terminal]  |
-|                                                                      │            |
-|  [Step 8: Launch App] <── [Step 6: Install Packages] <── [Step 4-5: .venv Setup]  |
-+-----------------------------------------------------------------------------------+
-```
+If you are on Windows and have Python (3.10–3.12) installed:
+
+1. **Clone the repository:**
+   ```cmd
+   git clone https://github.com/xdc7-css/Vision-Based-Sign-Language-Recognition.git
+   cd Vision-Based-Sign-Language-Recognition
+   ```
+2. **Run One-Click Setup:**
+   Double-click `SETUP_WINDOWS.bat` or run:
+   ```cmd
+   SETUP_WINDOWS.bat
+   ```
+   *This automatically detects Python, creates an isolated `.venv`, installs all dependencies from `requirements.txt`, validates all AI model checkpoints, and verifies the system.*
+3. **Launch the Application:**
+   Double-click `RUN.bat` or run:
+   ```cmd
+   RUN.bat
+   ```
+   or:
+   ```cmd
+   python run
+   ```
+   Choose between:
+   * `[1] Python Desktop — PySide6`
+   * `[2] Local Web — React + FastAPI`
+   * `[0] Exit`
 
 ---
 
-### Step 1: Install Python 3.12 (64-bit)
+### Step 1: Install Python 3.12 (64-bit) (If not already installed)
 1. Open your web browser and navigate to the official Python download page:  
    👉 **[https://www.python.org/downloads/release/python-3124/](https://www.python.org/downloads/release/python-3124/)**
 2. Scroll to the bottom table titled **Files** and click on **Windows installer (64-bit)** to download the installer (`python-3.12.4-amd64.exe`).
