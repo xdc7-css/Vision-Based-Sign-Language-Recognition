@@ -1,11 +1,11 @@
 {
   "version": "1.0.0",
-  "updated_at": 1794065074.2166457,
+  "updated_at": 1794071415.228153,
   "classes": [
     {
       "id": "sorry",
       "name": "آسف",
-      "category": "static",
+      "category": "both",
       "description": "Sorry",
       "is_active": true,
       "is_default": true,
@@ -445,7 +445,7 @@
     {
       "id": "no",
       "name": "لا",
-      "category": "static",
+      "category": "both",
       "description": "No",
       "is_active": true,
       "is_default": true,

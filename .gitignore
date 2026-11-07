@@ -37,6 +37,11 @@ logs/
 data/logs/
 data/cache/
 
+# Node / Web Frontend
+node_modules/
+web/node_modules/
+!web/dist/
+
 # Local Test Outputs
 test_camera_frame.jpg
 full_test_run.txt

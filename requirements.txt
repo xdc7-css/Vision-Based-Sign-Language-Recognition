@@ -33,6 +33,12 @@ PyYAML>=6.0                         # YAML config files
 # ── Model Export ────────────────────────────────────────────────
 skl2onnx>=1.15.0                    # sklearn → ONNX export (optional)
 
+# ── Web Backend ────────────────────────────────────────────────
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+websockets>=12.0
+pydantic>=2.0.0
+
 # ── Development ─────────────────────────────────────────────────
 pytest>=7.4.0
 pytest-cov>=4.1.0

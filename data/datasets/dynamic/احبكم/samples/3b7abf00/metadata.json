@@ -1,0 +1,13 @@
+{
+  "sample_id": "3b7abf00",
+  "gesture_type": "dynamic_phrase",
+  "gesture_label": "احبكم",
+  "dialect": "iraqi",
+  "timestamp": 1794071671.8653736,
+  "num_frames": 20,
+  "duration_seconds": 1.6588730812072754,
+  "fps": 12.056377444767886,
+  "has_motion": true,
+  "schema_version": "v1_single_hand",
+  "modality_mode": "one_hand"
+}

@@ -1,34 +1,37 @@
 #!/usr/bin/env python3
-"""Global application launcher for Vision-Based Sign Language Recognition.
+"""Global dual-mode interactive launcher for ArSL Studio.
 
-Enables one-command launching from the project root or any project subfolder:
+Enables one-command launching from the project root or any subfolder:
     python run
     python run.py
 
-Automatically locates the real project root, dispatches execution to the
-isolated Python 3.12 virtual environment (.venv), verifies model assets,
-and launches the PySide6 desktop GUI.
+Presents an interactive choice:
+    [1] Python Desktop — PySide6
+    [2] Local Web — React + FastAPI
+    [0] Exit
 """
 
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
+import time
+import urllib.request
+import webbrowser
 
 
 def find_project_root() -> str | None:
     """Locate the project root directory by searching upward for project markers."""
     start_dirs: list[str] = []
 
-    # 1. Script directory (if __file__ exists)
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         start_dirs.append(script_dir)
     except NameError:
         pass
 
-    # 2. Current working directory
     try:
         cwd = os.path.abspath(os.getcwd())
         if cwd not in start_dirs:
@@ -41,9 +44,10 @@ def find_project_root() -> str | None:
         while True:
             has_venv = os.path.isdir(os.path.join(cur, ".venv"))
             has_src = os.path.isfile(os.path.join(cur, "src", "main.py"))
-            has_karsl = os.path.isfile(os.path.join(cur, "data", "models", "karsl", "karsl_502.onnx"))
+            has_web = os.path.isdir(os.path.join(cur, "web"))
+            has_backend = os.path.isdir(os.path.join(cur, "backend"))
 
-            if (has_venv and has_src) or (has_src and has_karsl):
+            if (has_venv and has_src) or (has_src and has_backend) or (has_src and has_web):
                 return cur
 
             parent = os.path.dirname(cur)
@@ -62,136 +66,186 @@ def get_venv_python(project_root: str) -> str:
     posix_py = os.path.join(project_root, ".venv", "bin", "python")
     if os.path.isfile(posix_py):
         return posix_py
-    return venv_py
+    return sys.executable
 
 
-def _verify_environment() -> bool:
-    """Perform pre-flight checks on required runtime dependencies."""
-    missing_deps: list[str] = []
-
-    deps = [
-        ("PySide6", "PySide6 (Qt 6 Framework)"),
-        ("cv2", "OpenCV (opencv-python)"),
-        ("mediapipe", "Google MediaPipe"),
-        ("onnxruntime", "ONNX Runtime"),
-        ("numpy", "NumPy"),
-        ("yaml", "PyYAML"),
-    ]
-
-    for module_name, display_name in deps:
-        try:
-            __import__(module_name)
-        except ImportError:
-            missing_deps.append(f"  • {display_name} (import name: '{module_name}')")
-
-    if missing_deps:
-        print("\n" + "=" * 76)
-        print(" [!] CRITICAL STARTUP ERROR: Missing Required Dependencies")
-        print("=" * 76)
-        print("The following essential libraries were not found in the current Python environment:")
-        for dep in missing_deps:
-            print(dep)
-        print("\nTroubleshooting Instructions:")
-        print("  1. Verify your Python virtual environment is activated:")
-        print("       PowerShell:  .\\.venv\\Scripts\\Activate.ps1")
-        print("       CMD:         .venv\\Scripts\\activate.bat")
-        print("  2. If packages are missing, install them into your virtual environment:")
-        print("       python -m pip install -r requirements.txt")
-        print("=" * 76 + "\n")
+def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    """Check if a local TCP port is already open."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            return s.connect_ex((host, port)) == 0
+    except Exception:
         return False
 
-    return True
+
+def wait_for_backend(url: str = "http://127.0.0.1:8000/api/health", timeout_secs: float = 15.0) -> bool:
+    """Wait until backend HTTP server responds with status 200."""
+    t0 = time.time()
+    while time.time() - t0 < timeout_secs:
+        try:
+            with urllib.request.urlopen(url, timeout=1.0) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.4)
+    return False
 
 
-def _verify_model_assets(project_root: str) -> None:
-    """Verify that required pretrained models are accessible."""
-    karsl_model = os.path.join(project_root, "data", "models", "karsl", "karsl_502.onnx")
-    if not os.path.isfile(karsl_model):
-        print(f"[!] WARNING: Foundation model file not found at: {karsl_model}")
-        print("    Live recognition using KArSL-502 may fail. Please ensure model assets are present.\n")
-
-
-def bootstrap_gui(project_root: str) -> int:
-    """Execute the application inside the confirmed virtual environment."""
+def run_desktop(project_root: str) -> int:
+    """Launch the original PySide6 desktop application."""
+    print("\n[*] Initializing ArSL Studio Desktop (PySide6)...")
     os.chdir(project_root)
-
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-
-    if not _verify_environment():
-        return 1
-
-    _verify_model_assets(project_root)
 
     try:
         from src.main import main as app_main
         app_main()
         return 0
-    except SystemExit as exc:
-        return exc.code if isinstance(exc.code, int) else 0
     except KeyboardInterrupt:
-        print("\n[*] Application shutdown requested by user (Ctrl+C). Exiting cleanly.")
+        print("\n[*] Desktop application closed by user.")
         return 0
     except Exception as exc:
-        print(f"\n[!] Unexpected application error during execution: {exc}", file=sys.stderr)
+        print(f"\n[!] Error launching desktop application: {exc}", file=sys.stderr)
         return 1
+
+
+def run_web(project_root: str, port: int = 8000) -> int:
+    """Launch the Local Web application (FastAPI + React)."""
+    os.chdir(project_root)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    print("\n" + "=" * 50)
+    print(" ArSL STUDIO — Starting Local Web Application")
+    print("=" * 50)
+
+    # 1. Verify/build web frontend bundle
+    dist_index = os.path.join(project_root, "web", "dist", "index.html")
+    if not os.path.isfile(dist_index):
+        print("[*] Building production React frontend bundle...")
+        build_res = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=os.path.join(project_root, "web"),
+            shell=True,
+        )
+        if build_res.returncode != 0:
+            print("[!] Warning: React build failed. You can run 'npm run dev' inside web/ for live development.")
+
+    # 2. Check port conflict
+    if is_port_in_use(port):
+        print(f"[!] Warning: Port {port} is already in use by another application.")
+        print(f"    Please stop the conflicting process or choose another port.")
+        return 1
+
+    local_url = f"http://127.0.0.1:{port}"
+    print(f"[*] Starting local FastAPI server at {local_url}...")
+    print(f"[*] Access URL: {local_url}")
+    print("[*] Press Ctrl+C in this terminal window to stop the server.\n")
+
+    # Launch browser in a background timer
+    def open_browser():
+        time.sleep(1.2)
+        if wait_for_backend(f"{local_url}/api/health", timeout_secs=10.0):
+            print(f"[*] Opening browser to {local_url}...")
+            webbrowser.open(local_url)
+
+    import threading
+    t = threading.Thread(target=open_browser, daemon=True)
+    t.start()
+
+    # Run Uvicorn directly
+    try:
+        import uvicorn
+        uvicorn.run("backend.main:app", host="127.0.0.1", port=port, log_level="info")
+        return 0
+    except KeyboardInterrupt:
+        print("\n[*] Web server shutdown requested by user (Ctrl+C). Exiting cleanly.")
+        return 0
+    except Exception as exc:
+        print(f"\n[!] Web server runtime error: {exc}", file=sys.stderr)
+        return 1
+
+
+def display_menu() -> str:
+    """Display the clean interactive CLI menu requested by user."""
+    banner = """
+========================================
+ ArSL STUDIO
+ Arabic Sign Language Recognition
+========================================
+
+ Select Application Mode:
+
+ [1] Python Desktop — PySide6
+ [2] Local Web — React + FastAPI
+ [0] Exit
+"""
+    print(banner)
+    try:
+        choice = input(" Enter your choice: ").strip()
+        return choice
+    except (KeyboardInterrupt, EOFError):
+        print("\n[*] Exiting cleanly.")
+        return "0"
 
 
 def main() -> int:
-    """Main launcher entry point with automatic root discovery and venv dispatch."""
+    """Global launcher entry point with automatic root discovery and venv dispatch."""
     project_root = find_project_root()
     if not project_root:
-        print("\n" + "=" * 76, file=sys.stderr)
-        print(" [!] ERROR: Project Root Not Found", file=sys.stderr)
-        print("=" * 76, file=sys.stderr)
-        print("Could not locate the 'Vision-Based Sign Language Recognition' root directory.", file=sys.stderr)
-        print(f"Current Working Directory: {os.getcwd()}", file=sys.stderr)
-        print("Please run this command from within the project directory tree.", file=sys.stderr)
-        print("=" * 76 + "\n", file=sys.stderr)
+        print("[!] ERROR: Could not locate project root directory.", file=sys.stderr)
         return 1
 
     venv_python = get_venv_python(project_root)
-    if not os.path.isfile(venv_python):
-        print("\n" + "=" * 76, file=sys.stderr)
-        print(" [!] ERROR: Python Virtual Environment (.venv) Not Found", file=sys.stderr)
-        print("=" * 76, file=sys.stderr)
-        print(f"Expected virtual environment at: {venv_python}", file=sys.stderr)
-        print("\nPlease create the virtual environment and install dependencies:", file=sys.stderr)
-        print(f"  cd \"{project_root}\"", file=sys.stderr)
-        print("  py -3.12 -m venv .venv", file=sys.stderr)
-        print("  .\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt", file=sys.stderr)
-        print("=" * 76 + "\n", file=sys.stderr)
-        return 1
 
+    # If running outside the isolated virtualenv, dispatch directly into it
     current_exe = os.path.normcase(os.path.abspath(sys.executable))
     target_exe = os.path.normcase(os.path.abspath(venv_python))
 
-    if current_exe == target_exe:
-        return bootstrap_gui(project_root)
-
-    # Avoid recursion
-    if os.environ.get("_ARSL_DISPATCH_ACTIVE") == "1":
-        print(f"[!] ERROR: Recursion detected during virtual environment dispatch ({sys.executable}). Aborting.", file=sys.stderr)
-        return 1
-
-    env = os.environ.copy()
-    env["_ARSL_DISPATCH_ACTIVE"] = "1"
-    env["PYTHONUNBUFFERED"] = "1"
-
-    root_run_script = os.path.join(project_root, "run.py")
-    cmd = [venv_python, root_run_script] + sys.argv[1:]
-
-    try:
-        res = subprocess.run(cmd, cwd=project_root, env=env)
-        if res.returncode in (0, 3221225477, -1073741819, -1):
+    if current_exe != target_exe and os.path.isfile(venv_python) and os.environ.get("_ARSL_DISPATCH_ACTIVE") != "1":
+        env = os.environ.copy()
+        env["_ARSL_DISPATCH_ACTIVE"] = "1"
+        env["PYTHONUNBUFFERED"] = "1"
+        cmd = [venv_python, os.path.join(project_root, "run.py")] + sys.argv[1:]
+        try:
+            res = subprocess.run(cmd, cwd=project_root, env=env)
+            return res.returncode
+        except KeyboardInterrupt:
             return 0
-        return res.returncode
-    except KeyboardInterrupt:
-        print("\n[*] Application shutdown requested by user (Ctrl+C). Exiting cleanly.")
-        return 0
-    except Exception as exc:
-        print(f"\n[!] Failed to launch virtual environment process: {exc}", file=sys.stderr)
-        return 1
+        except Exception as e:
+            print(f"[!] Error dispatching to virtual environment: {e}", file=sys.stderr)
+            return 1
+
+    # In case user provided CLI flags: e.g. python run --desktop or python run --web
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].lower()
+        if arg in ("--desktop", "-d", "1"):
+            return run_desktop(project_root)
+        elif arg in ("--web", "-w", "2"):
+            return run_web(project_root)
+        elif arg in ("--exit", "-e", "0"):
+            print("\n[*] Goodbye!\n")
+            return 0
+        elif arg in ("--help", "-h"):
+            print("Usage: python run [1|--desktop] [2|--web] [0|--exit]")
+            return 0
+
+    # Interactive Menu Loop
+    while True:
+        choice = display_menu()
+
+        if choice == "1":
+            return run_desktop(project_root)
+        elif choice == "2":
+            return run_web(project_root)
+        elif choice == "0":
+            print("\n[*] Goodbye!\n")
+            return 0
+        else:
+            print("\n[!] Invalid selection. Please enter 1, 2, or 0.")
+            time.sleep(1.0)
 
 
 if __name__ == "__main__":

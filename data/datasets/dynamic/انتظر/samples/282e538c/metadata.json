@@ -1,0 +1,13 @@
+{
+  "sample_id": "282e538c",
+  "gesture_type": "dynamic_phrase",
+  "gesture_label": "انتظر",
+  "dialect": "iraqi",
+  "timestamp": 1794068911.2863197,
+  "num_frames": 22,
+  "duration_seconds": 1.5398519039154053,
+  "fps": 14.287088221964892,
+  "has_motion": true,
+  "schema_version": "v2_multimodal",
+  "modality_mode": "two_hands_face"
+}
