@@ -139,6 +139,16 @@ class KArSLResult:
     decision_path: str = "karsl_502"
     all_top_candidates: list[tuple[str, str, float]] = field(default_factory=list)
 
+    @property
+    def sign(self) -> str:
+        """Alias for arabic_text for backward compatibility."""
+        return self.arabic_text
+
+    @property
+    def word(self) -> str:
+        """Alias for arabic_text."""
+        return self.arabic_text
+
 
 class MotionDetector:
     """Adaptive frame motion detector to filter idle periods."""
@@ -208,9 +218,10 @@ class TSNSampler:
 
         idx_floor = np.floor(indices).astype(int)
         idx_ceil = np.ceil(indices).astype(int)
-        alpha = (indices - idx_floor)[:, np.newaxis, np.newaxis]
+        alpha = (indices - idx_floor)[:, np.newaxis, np.newaxis].astype(np.float32)
 
-        return (1 - alpha) * kps[idx_floor] + alpha * kps[idx_ceil]
+        sampled = (1 - alpha) * kps[idx_floor] + alpha * kps[idx_ceil]
+        return sampled.astype(np.float32)
 
 
 class LandmarkerProcessor:
@@ -487,8 +498,8 @@ class KArSLRecognizer:
 
         buffer_len = len(self._frame_buffer)
 
-        # Evaluate if sufficient frames accumulated
-        if buffer_len < self.config.min_frames:
+        # Evaluate if sufficient frames accumulated and hand is present
+        if buffer_len < self.config.min_frames or not vis_info["has_hand"]:
             return (
                 KArSLResult(
                     pred_idx=-1,
@@ -508,7 +519,7 @@ class KArSLRecognizer:
         # TSN Temporal Sampling to exactly 50 frames
         kps_arr = np.array(self._frame_buffer, dtype=np.float32)
         sampled_50 = self._tsn_sampler(kps_arr)  # (50, 184, 4)
-        input_tensor = sampled_50.reshape(1, self.config.seq_len, TOTAL_INPUT_FEATURES)
+        input_tensor = sampled_50.reshape(1, self.config.seq_len, TOTAL_INPUT_FEATURES).astype(np.float32)
 
         # ONNX Inference
         raw_outputs = self._session.run(["output"], {"input": input_tensor})[0].flatten()

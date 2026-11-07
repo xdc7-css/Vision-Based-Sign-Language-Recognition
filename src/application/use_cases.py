@@ -99,12 +99,53 @@ class VideoSourceUseCases:
         self._state = state
         self._source: Optional[VideoSource] = None
         self._frame_count: int = 0
+        self._selected_source_type: Optional[VideoSourceType] = None
+        self._selected_uri: Optional[str] = None
+        self._selected_resolution: Optional[tuple[int, int]] = None
 
     @property
     def active_source(self) -> Optional[VideoSource]:
         return self._source
 
-    def start_source(self, source_type: VideoSourceType, uri: str) -> bool:
+    @property
+    def is_open(self) -> bool:
+        return self._source is not None and getattr(self._source, "is_open", False)
+
+    @property
+    def is_streaming(self) -> bool:
+        return self.is_open
+
+    def select_source(
+        self,
+        source_type: VideoSourceType,
+        uri: str,
+        device_index: Optional[int] = None,
+        resolution: Optional[tuple[int, int]] = None,
+    ) -> None:
+        """Configure source selection parameters before starting."""
+        self._selected_source_type = source_type
+        self._selected_uri = uri
+        self._selected_resolution = resolution
+
+    def start(self) -> bool:
+        """Start streaming from the previously selected source."""
+        if self._selected_source_type and self._selected_uri:
+            res = self.start_source(self._selected_source_type, self._selected_uri)
+            if res and self._selected_resolution:
+                self.set_resolution(*self._selected_resolution)
+            return res
+        return False
+
+    def stop(self) -> None:
+        """Stop video streaming (alias for stop_source)."""
+        self.stop_source()
+
+    def start_source(
+        self,
+        source_type: VideoSourceType,
+        uri: str,
+        resolution: Optional[tuple[int, int]] = None,
+    ) -> bool:
         from src.infrastructure.video_source_engine import VideoSourceFactory
 
         self.stop_source()
@@ -115,6 +156,9 @@ class VideoSourceUseCases:
                 self._state.error(f"Failed to open video source: {uri}")
                 self._source = None
                 return False
+
+            if resolution and hasattr(self._source, "set_resolution"):
+                self._source.set_resolution(*resolution)
 
             self._state.active_source = self._source.properties
             self._state.pipeline_status = "streaming"

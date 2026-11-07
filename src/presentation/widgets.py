@@ -4,7 +4,7 @@ from typing import Optional
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -232,32 +232,87 @@ class CameraPreview(QLabel):
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumSize(320, 240)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setStyleSheet("background-color: #1a1a1a; border: 1px solid #3c3c3c; border-radius: 4px;")
+        self.setStyleSheet("background-color: #0f1319; border: 1px solid #2b3441; border-radius: 8px;")
 
-        self._placeholder = self._create_placeholder()
+        self._placeholder = self._create_state_pixmap("Camera Standby", "Select camera and click Start Camera", "#2563eb")
         self.setPixmap(self._placeholder)
 
-    def _create_placeholder(self) -> QPixmap:
+    def _create_state_pixmap(self, title: str, subtitle: str, accent_color: str = "#2563eb") -> QPixmap:
+        """Create a clean, modern status card pixmap for standby/connecting/error states."""
         pixmap = QPixmap(640, 480)
-        pixmap.fill(Qt.black)
+        pixmap.fill(QColor("#0f1319"))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Center card
+        card_w, card_h = 400, 130
+        card_x = (640 - card_w) // 2
+        card_y = (480 - card_h) // 2
+
+        painter.setPen(QPen(QColor("#2b3441"), 1))
+        painter.setBrush(QBrush(QColor("#181d24")))
+        painter.drawRoundedRect(card_x, card_y, card_w, card_h, 8, 8)
+
+        # Accent dot
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor(accent_color)))
+        painter.drawEllipse(card_x + 28, card_y + 36, 12, 12)
+
+        # Title text
+        painter.setPen(QColor("#f8fafc"))
+        font_title = QFont()
+        font_title.setPointSize(14)
+        font_title.setBold(True)
+        painter.setFont(font_title)
+        painter.drawText(card_x + 50, card_y + 47, title)
+
+        # Subtitle text
+        painter.setPen(QColor("#94a3b8"))
+        font_sub = QFont()
+        font_sub.setPointSize(10)
+        painter.setFont(font_sub)
+        painter.drawText(card_x + 28, card_y + 85, subtitle)
+
+        painter.end()
         return pixmap
+
+    def _create_placeholder(self) -> QPixmap:
+        return self._create_state_pixmap("Camera Standby", "Select camera and click Start Camera", "#2563eb")
+
+    def set_standby(self, title: str = "Camera Standby", subtitle: str = "Select camera and click Start Camera") -> None:
+        self.setPixmap(self._create_state_pixmap(title, subtitle, "#2563eb"))
+
+    def set_connecting(self, title: str = "Connecting to Camera...", subtitle: str = "Initializing DirectShow video capture") -> None:
+        self.setPixmap(self._create_state_pixmap(title, subtitle, "#f59e0b"))
+
+    def set_error(self, title: str = "Camera Error", subtitle: str = "Failed to acquire frames from video source") -> None:
+        self.setPixmap(self._create_state_pixmap(title, subtitle, "#ef4444"))
 
     @Slot(np.ndarray)
     def display_frame(self, frame: np.ndarray) -> None:
-        """Display an RGB numpy array as a scaled image."""
-        if frame is None or frame.size == 0:
+        """Display an RGB numpy array as a scaled image with deep memory copy."""
+        if frame is None or getattr(frame, "size", 0) == 0:
             return
 
-        h, w, ch = frame.shape
-        bytes_per_line = ch * w
-        qimage = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        try:
+            if not getattr(frame.flags, "c_contiguous", False):
+                frame = np.ascontiguousarray(frame)
 
-        scaled = qimage.scaled(
-            self.width(), self.height(),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
-        )
-        self.setPixmap(QPixmap.fromImage(scaled))
+            h, w, ch = frame.shape
+            bytes_per_line = ch * w
+            qimage = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888).copy()
+
+            target_w = max(self.width(), 320)
+            target_h = max(self.height(), 240)
+            scaled = qimage.scaled(
+                target_w, target_h,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+            self.setPixmap(QPixmap.fromImage(scaled))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error rendering frame in CameraPreview: {e}")
 
 
 

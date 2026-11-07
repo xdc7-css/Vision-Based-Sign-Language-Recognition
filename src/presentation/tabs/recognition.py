@@ -61,9 +61,18 @@ class SignRecognitionWorker(QThread):
     frame_processed = Signal(object, object, dict, float)  # frame, karsl_res, vis_info, elapsed_ms
     error = Signal(str)
 
-    def __init__(self, parent: Optional[QObject] = None) -> None:
+    def __init__(
+        self,
+        detector: Optional[HandDetector] = None,
+        renderer: Optional[HandRenderer] = None,
+        pipeline: Optional[HybridRecognitionPipeline] = None,
+        parent: Optional[QObject] = None,
+    ) -> None:
         super().__init__(parent)
         self._karsl: Optional[KArSLRecognizer] = None
+        self._detector = detector
+        self._renderer = renderer
+        self._pipeline = pipeline
         self._queue: queue.Queue[Optional[np.ndarray]] = queue.Queue(maxsize=1)
         self._running = True
         self._lock = threading.Lock()
@@ -99,7 +108,6 @@ class SignRecognitionWorker(QThread):
                 continue
 
             start_t = time.perf_counter()
-            annotated = frame.copy()
             karsl_res: Optional[KArSLResult] = None
             vis_info: dict = {
                 "hands_detected": 0,
@@ -111,18 +119,42 @@ class SignRecognitionWorker(QThread):
             try:
                 # Sign Language Recognition Path
                 if self.active_engine == "karsl" and self._karsl and self._karsl.is_loaded:
-                    karsl_res = self._karsl.process_frame(annotated)
-                    vis = self._karsl.get_latest_visualizations()
-                    vis_info["hands_detected"] = 2 if (vis.get("left_hand") or vis.get("right_hand")) else 0
-                    vis_info["pose_detected"] = vis.get("pose") is not None
-                    vis_info["face_detected"] = vis.get("face") is not None
-                    vis_info["keypoint_count"] = self._karsl.total_keypoint_count
+                    res, ann_bgr, vis = self._karsl.process_frame(frame)
+                    karsl_res = res
+                    vis_info = vis
+                    frame_to_show = ann_bgr if self.show_landmarks else frame
+                    annotated = cv2.cvtColor(frame_to_show, cv2.COLOR_BGR2RGB)
+                elif self.active_engine == "custom" and self._detector:
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    det_res = self._detector.detect(frame_rgb)
+                    vis_info["hands_detected"] = len(det_res.hands)
+                    if self.show_landmarks and self._renderer and det_res.hands:
+                        ann_bgr = self._renderer.render(frame.copy(), det_res.hands)
+                        annotated = cv2.cvtColor(ann_bgr, cv2.COLOR_BGR2RGB)
+                    else:
+                        annotated = frame_rgb
 
-                    if self.show_landmarks:
-                        annotated = self._karsl.draw_keypoints(annotated, vis)
+                    if det_res.hands and self._pipeline:
+                        hyp_res = self._pipeline.process(det_res.hands[0])
+                        if hyp_res and hyp_res.is_valid:
+                            karsl_res = KArSLResult(
+                                pred_idx=0,
+                                arabic_text=hyp_res.arabic_text,
+                                english_text="",
+                                confidence=hyp_res.final_result.confidence,
+                                hand_detected=True,
+                                face_detected=False,
+                                pose_detected=False,
+                                buffer_fill=1,
+                                is_new=True,
+                                decision_path=hyp_res.decision_path,
+                            )
+                else:
+                    annotated = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
             except Exception as e:
                 self.error.emit(f"Vision processing error: {e}")
+                annotated = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
             elapsed = (time.perf_counter() - start_t) * 1000.0
             self.frame_processed.emit(annotated, karsl_res, vis_info, elapsed)
@@ -134,6 +166,16 @@ class SignRecognitionWorker(QThread):
                 self._queue.put_nowait(frame)
             except queue.Full:
                 pass
+
+    def reset(self) -> None:
+        """Clear queued frames, motion detector, and temporal recognizer state."""
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except Exception:
+                break
+        if self._karsl:
+            self._karsl.reset()
 
     def stop(self) -> None:
         """Gracefully terminate background thread."""
@@ -182,6 +224,7 @@ class RecognitionTab(QWidget):
 
         # Camera & Recognition state
         self._is_streaming = False
+        self._first_frame_rendered = False
         self._detection_count = 0
         self._last_display_frame: Optional[np.ndarray] = None
         self._current_word: str = ""
@@ -206,7 +249,12 @@ class RecognitionTab(QWidget):
             self._logger.debug(f"QTextToSpeech unavailable: {exc}")
 
         # Background Vision Worker
-        self._worker = SignRecognitionWorker(self)
+        self._worker = SignRecognitionWorker(
+            detector=self._detector,
+            renderer=self._renderer,
+            pipeline=self._pipeline,
+            parent=self,
+        )
         self._worker.karsl_loaded.connect(self._on_karsl_loaded)
         self._worker.frame_processed.connect(self._on_frame_processed)
         self._worker.error.connect(self._on_worker_error)
@@ -520,10 +568,12 @@ class RecognitionTab(QWidget):
 
     def _refresh_camera_list(self) -> None:
         """Enumerate system cameras via DirectShow COM and populate dropdown."""
+        current_sel = self._camera_combo.currentData()
         self._camera_combo.blockSignals(True)
         self._camera_combo.clear()
 
-        cameras = self._camera_service.list_cameras(force_refresh=True)
+        active_idx = current_sel if self._is_streaming else None
+        cameras = self._camera_service.list_cameras(force_refresh=True, active_index=active_idx)
         if not cameras:
             self._camera_combo.addItem("No cameras found", None)
             self._camera_combo.setEnabled(False)
@@ -533,7 +583,8 @@ class RecognitionTab(QWidget):
         else:
             self._camera_combo.setEnabled(True)
             self._start_stop_btn.setEnabled(True)
-            for cam in cameras:
+            found_idx = -1
+            for i, cam in enumerate(cameras):
                 label = f"{cam.name}"
                 if cam.device_type == "laptop":
                     label += " (Laptop Camera)"
@@ -543,10 +594,17 @@ class RecognitionTab(QWidget):
                     label += " (USB Camera)"
 
                 self._camera_combo.addItem(label, cam.index)
+                if current_sel is not None and cam.index == current_sel:
+                    found_idx = i
 
-            self._camera_combo.setCurrentIndex(0)
-            self._status_badge.setText("Ready to Connect")
-            self._status_badge.setStyleSheet("background-color: #14181f; color: #94a3b8; border: 1px solid #2b3441; border-radius: 4px; padding: 4px 10px;")
+            if found_idx >= 0:
+                self._camera_combo.setCurrentIndex(found_idx)
+            else:
+                self._camera_combo.setCurrentIndex(0)
+
+            if not self._is_streaming:
+                self._status_badge.setText("Ready to Connect")
+                self._status_badge.setStyleSheet("background-color: #14181f; color: #94a3b8; border: 1px solid #2b3441; border-radius: 4px; padding: 4px 10px;")
 
         self._camera_combo.blockSignals(False)
 
@@ -563,6 +621,11 @@ class RecognitionTab(QWidget):
         if idx is None:
             return
 
+        self._first_frame_rendered = False
+        self._status_badge.setText("Connecting...")
+        self._status_badge.setStyleSheet("background-color: #3b2d14; color: #f59e0b; border: 1px solid #78350f; border-radius: 4px; padding: 4px 10px; font-weight: 600;")
+        self._preview.set_connecting(title="Connecting to Camera...", subtitle=f"Initializing DirectShow device (Index {idx})")
+
         target_w, target_h = self._resolution_combo.currentData() or (640, 480)
         self._source_use_cases.select_source(
             VideoSourceType.WEBCAM,
@@ -577,27 +640,32 @@ class RecognitionTab(QWidget):
             self._start_stop_btn.setText("Stop Camera")
             self._start_stop_btn.setObjectName("dangerButton")
             self._start_stop_btn.setStyleSheet("background-color: #dc2626; border: 1px solid #b91c1c;")
-            self._status_badge.setText("● Live Streaming")
-            self._status_badge.setStyleSheet("background-color: #064e3b; color: #10b981; border: 1px solid #047857; border-radius: 4px; padding: 4px 10px; font-weight: 600;")
             self._timer.start(30)
-            self._decision_card.set_value("Active")
+            self._decision_card.set_value("Connecting")
         else:
             self._status_badge.setText("Failed to Open")
             self._status_badge.setStyleSheet("background-color: #3b1d1d; color: #ef4444; border: 1px solid #7f1d1d; border-radius: 4px; padding: 4px 10px;")
+            self._preview.set_error(title="Camera Error", subtitle=f"Failed to acquire video stream from device {idx}")
 
     def _stop_camera(self) -> None:
         """Stop capturing and release camera resources cleanly."""
         self._timer.stop()
         self._source_use_cases.stop()
         self._is_streaming = False
+        self._first_frame_rendered = False
+        self._worker.reset()
         self._start_stop_btn.setText("Start Camera")
         self._start_stop_btn.setObjectName("primaryButton")
         self._start_stop_btn.setStyleSheet("")
         self._status_badge.setText("Camera Ready")
         self._status_badge.setStyleSheet("background-color: #14181f; color: #94a3b8; border: 1px solid #2b3441; border-radius: 4px; padding: 4px 10px;")
         self._fps_indicator.setText("FPS: --")
-        self._preview.setPixmap(self._preview._placeholder)
+        self._preview.set_standby()
         self._decision_card.set_value("Ready")
+        self._caption_label.setText("جاهز للترجمة")
+        self._conf_bar.setValue(0)
+        self._conf_badge.setText("Confidence: --")
+        self._current_word = ""
 
     def _on_camera_combo_changed(self, index: int) -> None:
         """Handle immediate camera switching from dropdown."""
@@ -618,15 +686,28 @@ class RecognitionTab(QWidget):
         if not self._is_streaming:
             return
 
-        frame = self._source_use_cases.read_frame()
-        if frame is None or frame.size == 0:
+        frame_data = self._source_use_cases.read_frame()
+        if frame_data is None:
+            return
+
+        # Extract raw BGR numpy array safely from Frame object or direct ndarray
+        if hasattr(frame_data, "metadata") and "raw_bgr" in frame_data.metadata:
+            raw_bgr = frame_data.metadata["raw_bgr"]
+        elif hasattr(frame_data, "data"):
+            raw_bgr = frame_data.data
+        elif isinstance(frame_data, np.ndarray):
+            raw_bgr = frame_data
+        else:
+            return
+
+        if raw_bgr is None or getattr(raw_bgr, "size", 0) == 0:
             return
 
         if self._mirror_check.isChecked():
-            frame = cv2.flip(frame, 1)
+            raw_bgr = cv2.flip(raw_bgr, 1)
 
-        self._last_display_frame = frame
-        self._worker.process_frame(frame)
+        self._last_display_frame = raw_bgr
+        self._worker.process_frame(raw_bgr)
 
     @Slot(object, object, dict, float)
     def _on_frame_processed(
@@ -637,8 +718,19 @@ class RecognitionTab(QWidget):
         elapsed_ms: float,
     ) -> None:
         """Receive processed annotated frame and sign recognition result from worker."""
+        if not self._is_streaming:
+            return
+
         if annotated_frame is not None:
             self._preview.display_frame(annotated_frame)
+            if not self._first_frame_rendered:
+                self._first_frame_rendered = True
+                self._status_badge.setText("● Live Streaming")
+                self._status_badge.setStyleSheet(
+                    "background-color: #064e3b; color: #10b981; border: 1px solid #047857; "
+                    "border-radius: 4px; padding: 4px 10px; font-weight: 600;"
+                )
+                self._decision_card.set_value("Active")
 
         # Update FPS telemetry
         fps = 1000.0 / max(elapsed_ms, 1.0)
@@ -646,16 +738,23 @@ class RecognitionTab(QWidget):
         self._fps_card.set_value(f"{fps:.1f}")
         self._latency_card.set_value(f"{elapsed_ms:.0f} ms")
 
-        # Update Sign Language Recognition results
-        if karsl_res and karsl_res.sign:
-            word = karsl_res.sign.strip()
-            conf = karsl_res.confidence
+        # Update Sign Language Recognition results only from live valid frames
+        if (
+            karsl_res
+            and karsl_res.hand_detected
+            and karsl_res.confidence >= self._worker.confidence_threshold
+        ):
+            word = (
+                getattr(karsl_res, "arabic_text", "")
+                or getattr(karsl_res, "sign", "")
+            ).strip()
+            conf = getattr(karsl_res, "confidence", 0.0)
             conf_pct = int(conf * 100)
 
             self._conf_bar.setValue(conf_pct)
             self._conf_badge.setText(f"Confidence: {conf_pct}%")
 
-            if conf >= self._worker.confidence_threshold and word != self._current_word:
+            if word and (karsl_res.is_new or word != self._current_word):
                 self._current_word = word
                 self._caption_label.setText(word)
                 self._detection_count += 1
@@ -673,6 +772,9 @@ class RecognitionTab(QWidget):
                 self._history_list.insertItem(0, item_text)
                 if self._history_list.count() > 50:
                     self._history_list.takeItem(self._history_list.count() - 1)
+        elif karsl_res and not karsl_res.hand_detected:
+            self._conf_bar.setValue(0)
+            self._conf_badge.setText("Waiting for sign...")
 
     def _append_to_sentence(self, word: str) -> None:
         """Add newly recognized sign word to the constructed sentence."""
