@@ -1,16 +1,18 @@
-"""Model B: 1D Temporal Convolutional Neural Network (CNN) for KArSL Research.
+"""Research Model B: 1D Temporal Convolutional Neural Network (PyTorch).
 
-Uses:
-- PyTorch nn.Module with 1D temporal convolutions along the time dimension
-- Input representation: (Batch, Channels=736, Time=30)
-- Conv1D -> BatchNorm1d -> ReLU -> Dropout -> MaxPool1d blocks
-- Global Adaptive Average Pooling -> Dense classification head
-- Early stopping, learning rate scheduling, and execution profiling
-- Checkpoint persistence under data/models/research/cnn/
+Architecture for KArSL-502 Dynamic Gesture Recognition:
+- Input: 168-channel hand landmark trajectories across T=30 frames: (Batch, Channels=168, Time=30)
+- Temporal Convolution Blocks:
+  - Conv1D(168 -> 64, k=3) + BatchNorm + ReLU + MaxPool1D(2) + Dropout(0.3)
+  - Conv1D(64 -> 128, k=3) + BatchNorm + ReLU + MaxPool1D(2) + Dropout(0.3)
+  - Conv1D(128 -> 128, k=3) + BatchNorm + ReLU + AdaptiveAvgPool1D(1)
+- Multi-layer classification head: Dropout(0.3) -> Linear(128, 64) -> ReLU -> Linear(64, 10)
+- Zero-Leakage Protocol: Early stopping and LR scheduling monitor internal validation loss ONLY
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import time
@@ -20,7 +22,6 @@ from typing import Any, Callable, Optional
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.research.karsl_dataset import SELECTED_RESEARCH_CLASSES
@@ -30,58 +31,53 @@ logger = logging.getLogger("arsl.research.cnn")
 
 
 class TemporalSignCNN(nn.Module):
-    """1D Temporal Convolutional Neural Network for Sign Language Recognition.
+    """1D Temporal Convolutional Neural Network for sign gesture sequence classification."""
 
-    Learns spatial-temporal gesture patterns across ordered sequences of
-    MediaPipe body pose, face mesh, and dual-hand keypoints.
-    """
-
-    def __init__(self, in_channels: int = 736, num_classes: int = 12, dropout: float = 0.3) -> None:
+    def __init__(self, in_channels: int = 168, num_classes: int = 10, dropout: float = 0.3) -> None:
         super().__init__()
         self.in_channels = in_channels
         self.num_classes = num_classes
 
-        # Block 1: Initial temporal pattern detection (kernel size 5)
+        # Block 1: Channels=168 -> 64, Temporal resolution 30 -> 15
         self.block1 = nn.Sequential(
-            nn.Conv1d(in_channels, 128, kernel_size=5, padding=2),
+            nn.Conv1d(in_channels, 64, kernel_size=3, padding=1),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2),
+            nn.Dropout(dropout),
+        )
+
+        # Block 2: 64 -> 128, Temporal resolution 15 -> 7
+        self.block2 = nn.Sequential(
+            nn.Conv1d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Dropout(dropout * 0.7),
-            nn.MaxPool1d(2),  # T: 30 -> 15
-        )
-
-        # Block 2: Intermediate motion representation (kernel size 3)
-        self.block2 = nn.Sequential(
-            nn.Conv1d(128, 256, kernel_size=3, padding=1),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2),
             nn.Dropout(dropout),
-            nn.MaxPool1d(2),  # T: 15 -> 7
         )
 
-        # Block 3: Higher-level temporal dynamics
+        # Block 3: 128 -> 128, Global Temporal Aggregation
         self.block3 = nn.Sequential(
-            nn.Conv1d(256, 256, kernel_size=3, padding=1),
-            nn.BatchNorm1d(256),
+            nn.Conv1d(128, 128, kernel_size=3, padding=1),
+            nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.AdaptiveAvgPool1d(1),  # T: 7 -> 1
+            nn.AdaptiveAvgPool1d(1),
         )
 
-        # Classification Head
+        # Classifier head
         self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(256, 128),
-            nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128, num_classes),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(64, num_classes),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass. Expects x of shape (Batch, in_channels=736, seq_len=30)."""
+        """Forward pass. Expects x of shape (Batch, in_channels, seq_len=30)."""
         x = self.block1(x)
         x = self.block2(x)
-        x = self.block3(x)
+        x = self.block3(x).squeeze(-1)
         logits = self.classifier(x)
         return logits
 
@@ -89,14 +85,21 @@ class TemporalSignCNN(nn.Module):
 class ResearchCNNPipeline:
     """Trains and evaluates Model B (1D Temporal CNN) using PyTorch."""
 
-    def __init__(self, output_dir: Path | str = "data/models/research/cnn") -> None:
+    def __init__(
+        self,
+        output_dir: Path | str = "data/models/research/cnn",
+        feature_schema: str = "hands_only",
+        in_channels: int = 168,
+    ) -> None:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model: Optional[TemporalSignCNN] = None
         self.classes = SELECTED_RESEARCH_CLASSES
-        self.extractor = ResearchFeatureExtractor()
+        self.feature_schema = feature_schema
+        self.in_channels = in_channels
+        self.extractor = ResearchFeatureExtractor(feature_schema=feature_schema)
         self.metadata: dict[str, Any] = {}
 
         if self.is_trained():
@@ -115,7 +118,8 @@ class ResearchCNNPipeline:
         try:
             checkpoint = torch.load(model_file, map_location=self.device)
             num_classes = checkpoint.get("num_classes", len(self.classes))
-            in_channels = checkpoint.get("in_channels", 736)
+            in_channels = checkpoint.get("in_channels", self.in_channels)
+            self.in_channels = in_channels
 
             self.model = TemporalSignCNN(in_channels=in_channels, num_classes=num_classes)
             self.model.load_state_dict(checkpoint["state_dict"])
@@ -124,7 +128,7 @@ class ResearchCNNPipeline:
 
             self.classes = checkpoint.get("classes", SELECTED_RESEARCH_CLASSES)
             self.metadata = checkpoint.get("metadata", {})
-            logger.info(f"Research CNN model loaded successfully on {self.device}.")
+            logger.info(f"Research CNN model loaded successfully on {self.device} (in_channels={in_channels}).")
             return True
         except Exception as e:
             logger.error(f"Failed to load Research CNN model: {e}")
@@ -139,12 +143,17 @@ class ResearchCNNPipeline:
         epochs: int = 40,
         batch_size: int = 16,
         learning_rate: float = 0.001,
-        weight_decay: float = 1e-4,
-        patience: int = 10,
+        weight_decay: float = 1e-3,
+        patience: int = 8,
         progress_callback: Optional[Callable[[int, int, float, float], None]] = None,
     ) -> dict[str, Any]:
-        """Train 1D Temporal CNN with early stopping and learning rate scheduling."""
-        logger.info(f"Training Research CNN on {self.device} (epochs={epochs}, batch={batch_size})...")
+        """Train 1D Temporal CNN with zero-leakage internal early stopping.
+
+        Data Leakage Prevention:
+        - Early stopping and ReduceLROnPlateau monitor internal validation loss ONLY.
+        - Outer held-out test data must never be passed as X_val_seq.
+        """
+        logger.info(f"Training Research CNN on {self.device} (epochs={epochs}, batch={batch_size}, channels={self.in_channels})...")
         t0 = time.perf_counter()
 
         # Fix seeds for reproducibility
@@ -152,8 +161,11 @@ class ResearchCNNPipeline:
         np.random.seed(42)
         self.classes = SELECTED_RESEARCH_CLASSES
 
-        # 1. Transform to (N, C=736, T=30)
-        X_train_tensor = torch.tensor(self.extractor.prepare_cnn_dataset(X_train_seq), dtype=torch.float32)
+        # 1. Transform to (N, C, T=30)
+        X_train_prep = self.extractor.prepare_cnn_dataset(X_train_seq)
+        self.in_channels = X_train_prep.shape[1]
+
+        X_train_tensor = torch.tensor(X_train_prep, dtype=torch.float32)
         y_train_tensor = torch.tensor(y_train, dtype=torch.long)
 
         train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
@@ -161,14 +173,15 @@ class ResearchCNNPipeline:
 
         val_loader: Optional[DataLoader] = None
         if X_val_seq is not None and y_val is not None and len(X_val_seq) > 0:
-            X_val_tensor = torch.tensor(self.extractor.prepare_cnn_dataset(X_val_seq), dtype=torch.float32)
+            X_val_prep = self.extractor.prepare_cnn_dataset(X_val_seq)
+            X_val_tensor = torch.tensor(X_val_prep, dtype=torch.float32)
             y_val_tensor = torch.tensor(y_val, dtype=torch.long)
             val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
             val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
         # 2. Initialize Model
         num_classes = len(self.classes)
-        self.model = TemporalSignCNN(in_channels=736, num_classes=num_classes).to(self.device)
+        self.model = TemporalSignCNN(in_channels=self.in_channels, num_classes=num_classes).to(self.device)
 
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -194,7 +207,7 @@ class ResearchCNNPipeline:
 
             train_loss /= len(train_dataset)
 
-            # Validation step
+            # Validation step (Internal Validation Only)
             val_loss = train_loss
             if val_loader:
                 self.model.eval()
@@ -208,153 +221,140 @@ class ResearchCNNPipeline:
                 val_loss = val_loss_acc / len(val_dataset)
                 scheduler.step(val_loss)
 
-                # Early stopping check
+                # Early stopping check on internal validation
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
-                    best_state = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
+                    best_state = copy.deepcopy(self.model.state_dict())
                     no_improve_epochs = 0
                 else:
                     no_improve_epochs += 1
 
+                if no_improve_epochs >= patience:
+                    logger.info(f"Early stopping triggered at epoch {epoch} (best internal val loss: {best_val_loss:.4f})")
+                    break
+
             if progress_callback:
                 progress_callback(epoch, epochs, float(train_loss), float(val_loss))
 
-            if no_improve_epochs >= patience:
-                logger.info(f"Early stopping triggered at epoch {epoch}.")
-                break
-
-        # Restore best weights
+        # Restore best model state
         if best_state is not None:
             self.model.load_state_dict(best_state)
-            self.model.to(self.device)
 
         train_time = time.perf_counter() - t0
         self.model.eval()
 
-        # 3. Calculate final metrics
+        # Compute training accuracy
         with torch.no_grad():
-            train_out = self.model(X_train_tensor.to(self.device))
-            train_preds = torch.argmax(train_out, dim=1).cpu().numpy()
-            train_acc = float(accuracy_score(y_train, train_preds))
+            train_preds = self.model(X_train_tensor.to(self.device)).argmax(dim=1).cpu().numpy()
+            train_acc = float((train_preds == y_train).mean())
 
-        val_metrics: dict[str, float] = {}
-        if val_loader:
-            with torch.no_grad():
-                val_out = self.model(X_val_tensor.to(self.device))
-                val_preds = torch.argmax(val_out, dim=1).cpu().numpy()
-                val_metrics = {
-                    "val_accuracy": float(accuracy_score(y_val, val_preds)),
-                    "val_precision_macro": float(precision_score(y_val, val_preds, average="macro", zero_division=0)),
-                    "val_recall_macro": float(recall_score(y_val, val_preds, average="macro", zero_division=0)),
-                    "val_f1_macro": float(f1_score(y_val, val_preds, average="macro", zero_division=0)),
-                }
-
-        # 4. Measure single-sample inference latency
+        # Measure latency
         latency_ms = self._measure_inference_latency(X_train_seq[:1])
 
-        # 5. Persist Checkpoint & Artifacts
         metrics = {
-            "model_type": "cnn_1d_temporal",
-            "epochs_run": epoch,
+            "model_type": "cnn",
+            "in_channels": self.in_channels,
+            "feature_schema": self.feature_schema,
             "train_samples": len(X_train_seq),
+            "epochs_trained": epoch,
+            "best_internal_val_loss": round(float(best_val_loss), 4) if best_val_loss != float("inf") else None,
             "train_time_sec": round(train_time, 3),
             "inference_latency_ms": round(latency_ms, 2),
             "train_accuracy": round(train_acc, 4),
-            **{k: round(v, 4) for k, v in val_metrics.items()},
         }
 
         self.save_artifacts(metrics)
         return metrics
 
     def _measure_inference_latency(self, sample_seq: np.ndarray, num_runs: int = 50) -> float:
-        """Measure average CNN forward-pass latency in milliseconds."""
+        """Measure average model inference latency in milliseconds."""
         if self.model is None:
             return 0.0
 
-        sample_tensor = torch.tensor(
-            self.extractor.prepare_cnn_dataset(sample_seq),
-            dtype=torch.float32,
-            device=self.device,
-        )
+        sample_prep = self.extractor.prepare_cnn_dataset(sample_seq)
+        sample_tensor = torch.tensor(sample_prep, dtype=torch.float32, device=self.device)
 
+        self.model.eval()
         # Warm up
         with torch.no_grad():
-            self.model(sample_tensor)
+            _ = self.model(sample_tensor)
 
         times = []
         with torch.no_grad():
             for _ in range(num_runs):
-                t_start = time.perf_counter()
-                self.model(sample_tensor)
-                times.append(time.perf_counter() - t_start)
+                t0 = time.perf_counter()
+                _ = self.model(sample_tensor)
+                times.append(time.perf_counter() - t0)
 
         return float(np.mean(times) * 1000.0)
 
     def predict_sequence(self, sequence: np.ndarray) -> tuple[int, float, str, str]:
-        """Predict class for a sequence of shape (T, 736).
-
-        Returns:
-            (class_index, confidence, name_ar, name_en)
-        """
+        """Classify a single 30-frame sequence (live webcam or evaluation file)."""
         if self.model is None:
-            raise RuntimeError("CNN model is not loaded. Train or load checkpoint first.")
+            raise RuntimeError("Research CNN model is not trained or loaded.")
 
-        batch_seq = sequence[np.newaxis, ...]  # (1, T, 736)
-        x_tensor = torch.tensor(
-            self.extractor.prepare_cnn_dataset(batch_seq),
-            dtype=torch.float32,
-            device=self.device,
-        )
+        if sequence.ndim == 2:
+            sequence = np.expand_dims(sequence, axis=0)
+
+        seq_prep = self.extractor.prepare_cnn_dataset(sequence)
+        tensor = torch.tensor(seq_prep, dtype=torch.float32, device=self.device)
 
         self.model.eval()
         with torch.no_grad():
-            logits = self.model(x_tensor)
-            probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
+            logits = self.model(tensor)
+            probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
 
         class_idx = int(np.argmax(probs))
         confidence = float(probs[class_idx])
 
-        name_ar = self.classes[class_idx]["name_ar"]
-        name_en = self.classes[class_idx]["name_en"]
+        if class_idx < len(self.classes):
+            name_ar = self.classes[class_idx]["name_ar"]
+            name_en = self.classes[class_idx]["name_en"]
+        else:
+            name_ar = f"إشارة {class_idx}"
+            name_en = f"Sign {class_idx}"
+
         return class_idx, confidence, name_ar, name_en
 
     def save_artifacts(self, metrics: dict[str, Any]) -> None:
-        """Persist PyTorch model checkpoint, classes mapping, metadata, and evaluation metrics."""
+        """Save model checkpoint, classes, and metadata to disk."""
         model_file = self.output_dir / "cnn_model.pt"
         classes_file = self.output_dir / "classes.json"
-        metrics_file = self.output_dir / "metrics.json"
         meta_file = self.output_dir / "metadata.json"
+        metrics_file = self.output_dir / "metrics.json"
 
-        checkpoint = {
-            "state_dict": self.model.state_dict() if self.model else {},
-            "in_channels": 736,
-            "num_classes": len(self.classes),
-            "classes": self.classes,
-            "metadata": {
-                "algorithm": "1D Temporal Convolutional Neural Network (Conv1D)",
-                "framework": "PyTorch",
-                "device": str(self.device),
+        if self.model is not None:
+            checkpoint = {
+                "in_channels": self.in_channels,
                 "num_classes": len(self.classes),
-                "timestamp": time.time(),
-            },
-        }
-
-        torch.save(checkpoint, model_file)
+                "state_dict": self.model.state_dict(),
+                "classes": self.classes,
+                "metadata": {
+                    "architecture": "TemporalSignCNN-1D",
+                    "in_channels": self.in_channels,
+                    "seq_len": 30,
+                    "feature_schema": self.feature_schema,
+                    "updated_at": time.time(),
+                },
+            }
+            torch.save(checkpoint, model_file)
 
         with open(classes_file, "w", encoding="utf-8") as f:
             json.dump(self.classes, f, ensure_ascii=False, indent=2)
 
-        with open(metrics_file, "w", encoding="utf-8") as f:
-            json.dump(metrics, f, ensure_ascii=False, indent=2)
-
-        model_size_kb = model_file.stat().st_size / 1024.0
-        meta = {
-            **checkpoint["metadata"],
-            "model_size_kb": round(model_size_kb, 1),
-            "metrics": metrics,
+        metadata = {
+            "model_type": "cnn",
+            "model_name": "1D Temporal CNN",
+            "architecture": "TemporalSignCNN-1D (PyTorch)",
+            "in_channels": self.in_channels,
+            "classes_count": len(self.classes),
+            "feature_schema": self.feature_schema,
+            "updated_at": time.time(),
+            "data_source": "karsl_502_authentic_video",
+            "provenance": "KArSL-502 Official Dataset (Sidig et al., ACM TALIP 2021)",
         }
         with open(meta_file, "w", encoding="utf-8") as f:
-            json.dump(meta, f, ensure_ascii=False, indent=2)
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
 
-        logger.info(f"CNN checkpoint saved ({model_size_kb:.1f} KB).")
-
+        with open(metrics_file, "w", encoding="utf-8") as f:
+            json.dump(metrics, f, ensure_ascii=False, indent=2)

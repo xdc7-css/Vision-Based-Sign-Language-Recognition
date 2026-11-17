@@ -1,20 +1,14 @@
 {
-  "algorithm": "1D Temporal Convolutional Neural Network (Conv1D)",
-  "framework": "PyTorch",
-  "device": "cpu",
-  "num_classes": 10,
-  "timestamp": 1794913169.2477899,
-  "model_size_kb": 3147.6,
-  "metrics": {
-    "model_type": "cnn_1d_temporal",
-    "epochs_run": 13,
-    "train_samples": 160,
-    "train_time_sec": 3.745,
-    "inference_latency_ms": 1.14,
-    "train_accuracy": 0.5125,
-    "val_accuracy": 0.25,
-    "val_precision_macro": 0.1719,
-    "val_recall_macro": 0.25,
-    "val_f1_macro": 0.1745
-  }
+  "model_type": "cnn",
+  "model_name": "1D Temporal CNN",
+  "architecture": "TemporalSignCNN-1D (PyTorch)",
+  "in_channels": 168,
+  "classes_count": 10,
+  "feature_schema": "hands_only",
+  "updated_at": 1794914557.4713812,
+  "data_source": "karsl_502_authentic_video",
+  "provenance": "KArSL-502 Official Dataset (Sidig et al., ACM TALIP 2021)",
+  "deployment_status": "PRODUCTION_DEPLOYMENT",
+  "training_strategy": "full_authentic_dataset_all_signers",
+  "note": "Trained on all 3 signers (240 authentic video sequences). Cross-validation generalization was separately evaluated via 3-Fold LOSO without test leakage."
 }

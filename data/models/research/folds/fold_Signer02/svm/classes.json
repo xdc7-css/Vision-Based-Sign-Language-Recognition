@@ -1,0 +1,72 @@
+[
+  {
+    "sign_id": "0001",
+    "index": 0,
+    "name_ar": "صفر",
+    "name_en": "0",
+    "category": "number"
+  },
+  {
+    "sign_id": "0002",
+    "index": 1,
+    "name_ar": "واحد",
+    "name_en": "1",
+    "category": "number"
+  },
+  {
+    "sign_id": "0003",
+    "index": 2,
+    "name_ar": "اثنان",
+    "name_en": "2",
+    "category": "number"
+  },
+  {
+    "sign_id": "0004",
+    "index": 3,
+    "name_ar": "ثلاثة",
+    "name_en": "3",
+    "category": "number"
+  },
+  {
+    "sign_id": "0005",
+    "index": 4,
+    "name_ar": "أربعة",
+    "name_en": "4",
+    "category": "number"
+  },
+  {
+    "sign_id": "0006",
+    "index": 5,
+    "name_ar": "خمسة",
+    "name_en": "5",
+    "category": "number"
+  },
+  {
+    "sign_id": "0007",
+    "index": 6,
+    "name_ar": "ستة",
+    "name_en": "6",
+    "category": "number"
+  },
+  {
+    "sign_id": "0008",
+    "index": 7,
+    "name_ar": "سبعة",
+    "name_en": "7",
+    "category": "number"
+  },
+  {
+    "sign_id": "0009",
+    "index": 8,
+    "name_ar": "ثمانية",
+    "name_en": "8",
+    "category": "number"
+  },
+  {
+    "sign_id": "0010",
+    "index": 9,
+    "name_ar": "تسعة",
+    "name_en": "9",
+    "category": "number"
+  }
+]

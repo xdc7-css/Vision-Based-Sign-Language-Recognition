@@ -1,0 +1,11 @@
+{
+  "model_type": "cnn",
+  "model_name": "1D Temporal CNN",
+  "architecture": "TemporalSignCNN-1D (PyTorch)",
+  "in_channels": 168,
+  "classes_count": 10,
+  "feature_schema": "hands_only",
+  "updated_at": 1794914540.564218,
+  "data_source": "karsl_502_authentic_video",
+  "provenance": "KArSL-502 Official Dataset (Sidig et al., ACM TALIP 2021)"
+}

@@ -1,0 +1,11 @@
+{
+  "model_type": "cnn",
+  "in_channels": 168,
+  "feature_schema": "hands_only",
+  "train_samples": 128,
+  "epochs_trained": 40,
+  "best_internal_val_loss": 0.5122,
+  "train_time_sec": 4.992,
+  "inference_latency_ms": 0.69,
+  "train_accuracy": 0.9531
+}

@@ -1,24 +1,13 @@
 {
-  "algorithm": "Support Vector Machine (SVC)",
-  "framework": "scikit-learn",
-  "kernel": "rbf",
-  "num_classes": 10,
-  "feature_engineering": "mean, std, displacement (2,208 dims)",
-  "timestamp": 1794913165.37375,
-  "model_size_kb": 2775.6,
-  "metrics": {
-    "model_type": "svm",
-    "kernel": "rbf",
-    "C": 2.0,
-    "gamma": "scale",
-    "train_samples": 160,
-    "feature_dim": 2208,
-    "train_time_sec": 0.202,
-    "inference_latency_ms": 0.73,
-    "train_accuracy": 0.95,
-    "val_accuracy": 0.275,
-    "val_precision_macro": 0.1642,
-    "val_recall_macro": 0.275,
-    "val_f1_macro": 0.1764
-  }
+  "model_type": "svm",
+  "model_name": "Support Vector Machine (SVM)",
+  "classes_count": 10,
+  "feature_schema": "hands_only",
+  "feature_dim": 672,
+  "updated_at": 1794914550.0517533,
+  "data_source": "karsl_502_authentic_video",
+  "provenance": "KArSL-502 Official Dataset (Sidig et al., ACM TALIP 2021)",
+  "deployment_status": "PRODUCTION_DEPLOYMENT",
+  "training_strategy": "full_authentic_dataset_all_signers",
+  "note": "Trained on all 3 signers (240 authentic video sequences). Cross-validation generalization was separately evaluated via 3-Fold LOSO without test leakage."
 }

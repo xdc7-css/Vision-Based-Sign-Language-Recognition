@@ -1,0 +1,16 @@
+{
+  "model_type": "svm",
+  "kernel": "rbf",
+  "C": 8.0,
+  "gamma": "scale",
+  "train_samples": 128,
+  "feature_schema": "hands_only",
+  "feature_dim": 672,
+  "train_time_sec": 0.217,
+  "inference_latency_ms": 0.23,
+  "train_accuracy": 0.9609,
+  "val_accuracy": 0.6875,
+  "val_precision_macro": 0.7167,
+  "val_recall_macro": 0.6833,
+  "val_f1_macro": 0.6819
+}

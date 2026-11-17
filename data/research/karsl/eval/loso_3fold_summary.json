@@ -1,28 +1,39 @@
 {
+  "protocol": "Strict 3-Fold Leave-One-Signer-Out (LOSO)",
+  "leakage_status": "ZERO_DATA_LEAKAGE_VERIFIED",
+  "feature_schema": "hands_only",
+  "citation": "Sidig et al. (2021), ACM TALIP",
   "folds": {
     "test_Signer01": {
-      "svm_acc": 0.325,
-      "svm_f1": 0.2602,
-      "cnn_acc": 0.4125,
-      "cnn_f1": 0.2811
+      "test_signer": "Signer01",
+      "svm_acc": 0.35,
+      "svm_f1": 0.2911,
+      "cnn_acc": 0.425,
+      "cnn_f1": 0.4085
     },
     "test_Signer02": {
-      "svm_acc": 0.2625,
-      "svm_f1": 0.2566,
-      "cnn_acc": 0.3625,
-      "cnn_f1": 0.357
+      "test_signer": "Signer02",
+      "svm_acc": 0.3125,
+      "svm_f1": 0.3003,
+      "cnn_acc": 0.475,
+      "cnn_f1": 0.4171
     },
     "test_Signer03": {
-      "svm_acc": 0.275,
-      "svm_f1": 0.1764,
-      "cnn_acc": 0.25,
-      "cnn_f1": 0.1745
+      "test_signer": "Signer03",
+      "svm_acc": 0.2125,
+      "svm_f1": 0.1672,
+      "cnn_acc": 0.35,
+      "cnn_f1": 0.3118
     }
   },
   "average": {
-    "svm_accuracy": 0.2875,
-    "svm_f1": 0.2311,
-    "cnn_accuracy": 0.3417,
-    "cnn_f1": 0.2709
+    "svm_accuracy": 0.2917,
+    "svm_accuracy_std": 0.058,
+    "svm_f1": 0.2529,
+    "svm_f1_std": 0.0607,
+    "cnn_accuracy": 0.4167,
+    "cnn_accuracy_std": 0.0514,
+    "cnn_f1": 0.3791,
+    "cnn_f1_std": 0.0477
   }
 }

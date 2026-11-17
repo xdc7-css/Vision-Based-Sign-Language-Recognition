@@ -1,0 +1,10 @@
+{
+  "model_type": "svm",
+  "model_name": "Support Vector Machine (SVM)",
+  "classes_count": 10,
+  "feature_schema": "hands_only",
+  "feature_dim": 672,
+  "updated_at": 1794914535.5093172,
+  "data_source": "karsl_502_authentic_video",
+  "provenance": "KArSL-502 Official Dataset (Sidig et al., ACM TALIP 2021)"
+}

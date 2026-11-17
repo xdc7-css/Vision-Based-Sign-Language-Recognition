@@ -39,9 +39,9 @@ class ResearchSignRecognizer:
         self.seq_len = seq_len
         self.feat_dim = feat_dim
 
-        self.svm_pipeline = ResearchSVMPipeline()
-        self.cnn_pipeline = ResearchCNNPipeline()
-        self.extractor = ResearchFeatureExtractor(seq_len=seq_len, feat_dim=feat_dim)
+        self.svm_pipeline = ResearchSVMPipeline(feature_schema="hands_only")
+        self.cnn_pipeline = ResearchCNNPipeline(feature_schema="hands_only")
+        self.extractor = ResearchFeatureExtractor(seq_len=seq_len, feat_dim=feat_dim, feature_schema="hands_only")
 
         self.frame_buffer: collections.deque[np.ndarray] = collections.deque(maxlen=seq_len)
         self.classes = SELECTED_RESEARCH_CLASSES

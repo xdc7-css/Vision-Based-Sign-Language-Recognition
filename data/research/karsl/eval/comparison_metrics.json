@@ -1,6 +1,7 @@
 {
-  "timestamp": 1794913169.3412836,
+  "timestamp": 1794914549.1532803,
   "protocol": "Leave-One-Signer-Out (LOSO)",
+  "leakage_status": "ZERO_DATA_LEAKAGE_VERIFIED",
   "fold": "test_Signer03",
   "train_signers": [
     "Signer01",
@@ -8,6 +9,8 @@
   ],
   "test_signer": "Signer03",
   "train_samples": 160,
+  "inner_train_samples": 128,
+  "inner_val_samples": 32,
   "test_samples": 80,
   "num_classes": 10,
   "classes": [
@@ -22,42 +25,43 @@
     "ثمانية",
     "تسعة"
   ],
+  "feature_schema": "hands_only",
   "is_authentic": true,
   "data_source": "karsl_502_authentic_video",
-  "provenance": "KArSL-502 Official Dataset (Sidig et al., ACM IMWUT 2021)",
+  "provenance": "KArSL-502 Official Dataset (Sidig et al., ACM TALIP 2021)",
   "svm": {
     "model_name": "Support Vector Machine (SVM)",
     "algorithm": "Scikit-Learn SVC (RBF Kernel)",
-    "input_type": "Engineered Statistical & Kinematic Features (2,208 dims)",
-    "accuracy": 0.275,
-    "precision_macro": 0.1642,
-    "recall_macro": 0.275,
-    "f1_macro": 0.1764,
-    "training_time_sec": 0.202,
-    "inference_latency_ms": 0.73,
-    "model_size_kb": 2775.6,
+    "input_type": "Engineered Statistical & Kinematic Features (672 dims)",
+    "accuracy": 0.2125,
+    "precision_macro": 0.172,
+    "recall_macro": 0.2125,
+    "f1_macro": 0.1672,
+    "training_time_sec": 0.3,
+    "inference_latency_ms": 0.26,
+    "model_size_kb": 679.1,
     "test_signer": "Signer03"
   },
   "cnn": {
     "model_name": "1D Temporal CNN",
     "algorithm": "PyTorch 1D Temporal Convolutional Neural Network",
-    "input_type": "Raw Temporal Landmark Sequences (30 frames x 736 channels)",
-    "accuracy": 0.25,
-    "precision_macro": 0.1719,
-    "recall_macro": 0.25,
-    "f1_macro": 0.1745,
-    "training_time_sec": 3.745,
-    "inference_latency_ms": 1.14,
-    "model_size_kb": 3147.6,
+    "input_type": "Raw Temporal Landmark Sequences (168 channels x 30 frames)",
+    "accuracy": 0.35,
+    "precision_macro": 0.3718,
+    "recall_macro": 0.35,
+    "f1_macro": 0.3118,
+    "training_time_sec": 3.293,
+    "inference_latency_ms": 0.66,
+    "model_size_kb": 464.6,
     "test_signer": "Signer03"
   },
   "winner": {
-    "best_model": "Support Vector Machine (SVM)",
-    "f1_difference": -0.0019,
-    "accuracy_difference": -0.025,
-    "rationale": "كلا النموذجين حققا دقة متقاربة، ولكن SVM تفوق في سرعة التدريب وخفة الحجم.",
+    "best_model": "1D Temporal CNN",
+    "f1_difference": 0.1446,
+    "accuracy_difference": 0.1375,
+    "rationale": "تفوق نموذج 1D CNN في دقة التعميم الزمني والتسلسل الحركي للإشارات على المؤدي غير المشاهد.",
     "speed_advantage": "SVM",
     "size_advantage": "SVM"
   },
-  "total_benchmark_time_sec": 4.36
+  "total_benchmark_time_sec": 3.84
 }

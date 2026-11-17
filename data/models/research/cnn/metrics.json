@@ -1,12 +1,11 @@
 {
-  "model_type": "cnn_1d_temporal",
-  "epochs_run": 13,
-  "train_samples": 160,
-  "train_time_sec": 3.745,
-  "inference_latency_ms": 1.14,
-  "train_accuracy": 0.5125,
-  "val_accuracy": 0.25,
-  "val_precision_macro": 0.1719,
-  "val_recall_macro": 0.25,
-  "val_f1_macro": 0.1745
+  "model_type": "cnn",
+  "in_channels": 168,
+  "feature_schema": "hands_only",
+  "train_samples": 204,
+  "epochs_trained": 45,
+  "best_internal_val_loss": 0.3093,
+  "train_time_sec": 7.352,
+  "inference_latency_ms": 0.63,
+  "train_accuracy": 0.9755
 }

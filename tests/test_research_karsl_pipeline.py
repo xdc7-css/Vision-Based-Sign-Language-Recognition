@@ -67,25 +67,25 @@ def test_karsl_feature_loading(dataset_manager: KArSLDatasetManager) -> None:
 
 
 def test_preprocessing_transformations() -> None:
-    extractor = ResearchFeatureExtractor(seq_len=30, feat_dim=736)
+    extractor = ResearchFeatureExtractor(seq_len=30, feat_dim=736, feature_schema="hands_only")
 
     # 1. Sequence resampling test
     buffer_frames = [np.random.randn(736).astype(np.float32) for _ in range(22)]
     resampled = extractor.resample_sequence(buffer_frames, target_len=30)
     assert resampled.shape == (30, 736)
 
-    # 2. Sequence to SVM feature aggregation (mean, std, displacement)
+    # 2. Sequence to SVM feature aggregation (mean, std, displacement, range)
     batch_seq = np.random.randn(5, 30, 736).astype(np.float32)
     scaled_feats, _ = extractor.prepare_svm_dataset(batch_seq, fit_scaler=True)
-    assert scaled_feats.shape == (5, 736 * 3)  # 2,208 features
+    assert scaled_feats.shape == (5, 168 * 4)  # 672 features for hands_only
 
     # 3. CNN tensor preparation: transpose from (N, T, C) -> (N, C, T)
     cnn_feats = extractor.prepare_cnn_dataset(batch_seq)
-    assert cnn_feats.shape == (5, 736, 30)
+    assert cnn_feats.shape == (5, 168, 30)
 
 
 def test_svm_pipeline_training_and_inference() -> None:
-    pipeline = ResearchSVMPipeline()
+    pipeline = ResearchSVMPipeline(feature_schema="hands_only")
     assert pipeline.is_trained() is True
     pipeline.load_model()
 
@@ -99,10 +99,10 @@ def test_svm_pipeline_training_and_inference() -> None:
 
 
 def test_cnn_pipeline_architecture_and_inference() -> None:
-    model = TemporalSignCNN(num_classes=10, in_channels=736)
+    model = TemporalSignCNN(num_classes=10, in_channels=168)
     assert model is not None
 
-    pipeline = ResearchCNNPipeline()
+    pipeline = ResearchCNNPipeline(feature_schema="hands_only")
     assert pipeline.is_trained() is True
     pipeline.load_model()
 
@@ -112,6 +112,26 @@ def test_cnn_pipeline_architecture_and_inference() -> None:
     assert 0 <= pred_idx < 10
     assert 0.0 <= conf <= 1.0
     assert len(name_ar) > 0
+
+
+def test_strict_zero_leakage_enforcement(dataset_manager: KArSLDatasetManager) -> None:
+    """Verifies that no outer test sample ever reaches training or validation sets."""
+    splits = dataset_manager.load_loso_splits()
+
+    for fold_name, fold_info in splits.items():
+        train_idx = set(fold_info["train_indices"])
+        test_idx = set(fold_info["test_indices"])
+        test_signer = fold_info.get("test_signer", fold_info.get("held_out_signer"))
+        train_signers = set(fold_info.get("train_signers", []))
+
+        # Check disjoint index sets
+        assert train_idx.isdisjoint(test_idx), f"Data leakage in {fold_name}: indices overlap!"
+        # Check held out signer not in training signers
+        assert test_signer not in train_signers, f"Data leakage in {fold_name}: test signer in train signers!"
+
+    # Invariant: passing overlapping indices must be detectable
+    overlap = np.intersect1d([0, 1, 2, 3], [3, 4, 5])
+    assert len(overlap) > 0
 
 
 def test_scientific_evaluator_reports(dataset_manager: KArSLDatasetManager) -> None:

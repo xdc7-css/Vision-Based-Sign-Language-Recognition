@@ -1,15 +1,16 @@
 {
   "model_type": "svm",
   "kernel": "rbf",
-  "C": 2.0,
+  "C": 8.0,
   "gamma": "scale",
-  "train_samples": 160,
-  "feature_dim": 2208,
-  "train_time_sec": 0.202,
-  "inference_latency_ms": 0.73,
-  "train_accuracy": 0.95,
-  "val_accuracy": 0.275,
-  "val_precision_macro": 0.1642,
-  "val_recall_macro": 0.275,
-  "val_f1_macro": 0.1764
+  "train_samples": 204,
+  "feature_schema": "hands_only",
+  "feature_dim": 672,
+  "train_time_sec": 0.733,
+  "inference_latency_ms": 0.35,
+  "train_accuracy": 0.9706,
+  "val_accuracy": 0.6944,
+  "val_precision_macro": 0.6258,
+  "val_recall_macro": 0.65,
+  "val_f1_macro": 0.6191
 }
