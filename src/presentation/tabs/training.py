@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QProgressBar,
@@ -429,6 +430,9 @@ class ModelTrainingTab(QWidget):
         # ── Academic Research Benchmark Card ─────────────────────────────
         layout.addWidget(self._create_research_box())
 
+        # ── Independent Human Evaluation Card ────────────────────────────
+        layout.addWidget(self._create_independent_eval_box())
+
         layout.addStretch()
 
     def _create_research_box(self) -> QFrame:
@@ -514,6 +518,169 @@ class ModelTrainingTab(QWidget):
         vbox.addLayout(test_row)
 
         return card
+
+    def _create_independent_eval_box(self) -> QFrame:
+        card = QFrame()
+        card.setObjectName("independentEvalCard")
+        card.setStyleSheet("""
+            QFrame#independentEvalCard {
+                background-color: #151a21;
+                border: 1px solid #2B3442;
+                border-radius: 8px;
+                padding: 16px;
+            }
+        """)
+        vbox = QVBoxLayout(card)
+        vbox.setContentsMargins(14, 14, 14, 14)
+        vbox.setSpacing(10)
+
+        # Header
+        hdr_layout = QHBoxLayout()
+        title_box = QVBoxLayout()
+        t_lbl = QLabel("👥  Independent Human Recognition Evaluation (Unseen Volunteers)")
+        t_lbl.setStyleSheet("font-size: 14px; font-weight: 700; color: #F3F4F6;")
+        title_box.addWidget(t_lbl)
+
+        s_lbl = QLabel(
+            "Protocol: 10 Arabic Digits (0–9) × 5 Repetitions • Dual Frozen Models (SVM vs CNN) • Zero Retraining"
+        )
+        s_lbl.setStyleSheet("font-size: 11px; color: #94A3B8;")
+        title_box.addWidget(s_lbl)
+        hdr_layout.addLayout(title_box)
+        hdr_layout.addStretch()
+
+        self._ind_status_badge = QLabel("Status: PENDING")
+        self._ind_status_badge.setStyleSheet(
+            "color: #F59E0B; font-weight: 600; padding: 4px 10px; background: #451a03; border-radius: 4px; font-size: 11px;"
+        )
+        hdr_layout.addWidget(self._ind_status_badge)
+        vbox.addLayout(hdr_layout)
+
+        # Info label explaining error disentanglement and storage isolation
+        info_lbl = QLabel(
+            "ℹ️ Scientific Protocol: Newly recruited volunteers record 10 Arabic digits (0001–0010) with 5 repetitions.\n"
+            "All recordings are saved isolated under data/research/independent_evaluation/ and are NEVER retrained on.\n"
+            "MediaPipe tracking dropouts are disentangled from model errors, and resting frames are tested for false positives."
+        )
+        info_lbl.setStyleSheet(
+            "color: #94A3B8; font-size: 11px; background: #101419; border: 1px solid #2B3442; border-radius: 6px; padding: 8px; line-height: 1.4;"
+        )
+        info_lbl.setWordWrap(True)
+        vbox.addWidget(info_lbl)
+
+        # Controls row
+        ctrl_row = QHBoxLayout()
+        ctrl_row.setSpacing(8)
+
+        self._vol_combo = QComboBox()
+        self._vol_combo.setMinimumWidth(180)
+        ctrl_row.addWidget(QLabel("Volunteer:"))
+        ctrl_row.addWidget(self._vol_combo)
+
+        self._reg_vol_btn = QPushButton("➕  Register New Volunteer")
+        self._reg_vol_btn.clicked.connect(self._on_register_volunteer_clicked)
+        ctrl_row.addWidget(self._reg_vol_btn)
+
+        self._run_ind_eval_btn = QPushButton("🚀  Run Frozen Evaluation")
+        self._run_ind_eval_btn.setObjectName("actionButton")
+        self._run_ind_eval_btn.clicked.connect(self._on_run_independent_eval_clicked)
+        ctrl_row.addWidget(self._run_ind_eval_btn)
+
+        ctrl_row.addStretch()
+        vbox.addLayout(ctrl_row)
+
+        # Results Label
+        self._ind_results_label = QLabel("Awaiting volunteer recording sessions. Status is strictly pending.")
+        self._ind_results_label.setStyleSheet(
+            "color: #F3F4F6; font-size: 12px; background: #101419; border: 1px solid #2B3442; border-radius: 6px; padding: 10px; line-height: 1.5;"
+        )
+        self._ind_results_label.setWordWrap(True)
+        vbox.addWidget(self._ind_results_label)
+
+        self._refresh_independent_eval_ui()
+        return card
+
+    def _refresh_independent_eval_ui(self) -> None:
+        try:
+            from src.research.independent_evaluation import IndependentEvaluationManager
+            mgr = IndependentEvaluationManager()
+            vols = mgr.list_volunteers()
+            self._vol_combo.clear()
+            if vols:
+                for v in vols:
+                    self._vol_combo.addItem(f"{v['name']} ({v.get('total_recordings', 0)}/50)", v["volunteer_id"])
+            else:
+                self._vol_combo.addItem("No volunteers registered", "")
+
+            st = mgr.get_status()
+            if st.get("is_evaluated", False):
+                self._ind_status_badge.setText(f"✅ Evaluated ({st.get('total_tested_recordings', 0)} videos)")
+                self._ind_status_badge.setStyleSheet(
+                    "color: #10B981; font-weight: 600; padding: 4px 10px; background: #064e3b; border-radius: 4px; font-size: 11px;"
+                )
+                tracking_rate = st.get("tracking_success_rate", 0.0) * 100
+                svm_acc = st.get("conditioned_accuracy", {}).get("svm", 0.0) * 100
+                cnn_acc = st.get("conditioned_accuracy", {}).get("cnn", 0.0) * 100
+                fp_svm = st.get("idle_evaluation", {}).get("svm_false_positive_rate", 0.0) * 100
+                fp_cnn = st.get("idle_evaluation", {}).get("cnn_false_positive_rate", 0.0) * 100
+                self._ind_results_label.setText(
+                    f"Independent Volunteer Benchmark Results:\n"
+                    f"• Landmark Tracking Success Rate: {tracking_rate:.1f}%\n"
+                    f"• Model A (SVM): Conditioned Acc {svm_acc:.1f}% | Idle False Positive Rate: {fp_svm:.1f}%\n"
+                    f"• Model B (CNN): Conditioned Acc {cnn_acc:.1f}% | Idle False Positive Rate: {fp_cnn:.1f}%\n"
+                    f"• Tested on {st.get('volunteers_count', 0)} unseen human volunteers."
+                )
+            else:
+                self._ind_status_badge.setText("⚠️ Status: PENDING")
+                self._ind_status_badge.setStyleSheet(
+                    "color: #F59E0B; font-weight: 600; padding: 4px 10px; background: #451a03; border-radius: 4px; font-size: 11px;"
+                )
+                self._ind_results_label.setText(
+                    "Independent Evaluation Status: PENDING_VOLUNTEER_RECORDINGS\n"
+                    "In accordance with research integrity standards, performance remains unmeasured "
+                    "until real human volunteers complete recording sessions. Zero synthetic data is substituted."
+                )
+        except Exception as e:
+            self._logger.debug(f"Independent eval UI refresh note: {e}")
+
+    def _on_register_volunteer_clicked(self) -> None:
+        name, ok = QInputDialog.getText(self, "Register Volunteer", "Enter Volunteer Name or Alias:")
+        if not ok or not name.strip():
+            return
+        notes, ok_n = QInputDialog.getText(self, "Volunteer Setup", "Enter Camera / Environment Notes (optional):")
+        try:
+            from src.research.independent_evaluation import IndependentEvaluationManager
+            mgr = IndependentEvaluationManager()
+            mgr.register_volunteer(name.strip(), notes.strip() if ok_n else "")
+            QMessageBox.information(self, "Volunteer Registered", f"Volunteer '{name.strip()}' registered successfully.")
+            self._refresh_independent_eval_ui()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to register volunteer: {e}")
+
+    def _on_run_independent_eval_clicked(self) -> None:
+        try:
+            from src.research.independent_evaluation import IndependentEvaluationManager
+            mgr = IndependentEvaluationManager()
+            res = mgr.evaluate_independent_dataset()
+            self._refresh_independent_eval_ui()
+            if not res.get("is_evaluated", False):
+                QMessageBox.information(
+                    self,
+                    "Evaluation Pending",
+                    "No accepted volunteer recordings were found in data/research/independent_evaluation/.\n"
+                    "Status remains strictly PENDING until volunteers record the 10 Arabic digits."
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Evaluation Complete",
+                    f"Independent volunteer evaluation complete!\n"
+                    f"Tracking Rate: {res.get('tracking_success_rate', 0.0)*100:.1f}%\n"
+                    f"SVM Acc: {res.get('conditioned_accuracy', {}).get('svm', 0.0)*100:.1f}%\n"
+                    f"CNN Acc: {res.get('conditioned_accuracy', {}).get('cnn', 0.0)*100:.1f}%"
+                )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Evaluation failed: {e}")
 
     def _test_research_model_in_recog(self, engine_id: str) -> None:
         if hasattr(self._state, "active_engine"):

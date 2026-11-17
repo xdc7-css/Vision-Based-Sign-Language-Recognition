@@ -129,9 +129,9 @@ The full project test suite was executed:
 ## 7. Recommended Next Experiment for Unbiased Validation
 
 To establish a definitive, unbiased field estimate without test-guided selection:
-1. **Blind Evaluation on New Signers:** Download recordings for `Signer04`, `Signer05`, and `Signer06` from the official KArSL dataset.
-2. **Frozen Model Protocol:** Evaluate the existing saved deployment models (`data/models/research/{svm,cnn}`) on the new signers **without modifying** feature schemas, network architectures, or hyperparameters.
-3. **Student/Instructor Verification:** Ingest local webcam recordings from 3 independent students in the department using `src/research/evaluate_new_recordings.py`.
+1. **Accurate Dataset Context:** The official KArSL-502 dataset contains exactly three human signers (`Signer01`, `Signer02`, `Signer03`). There are no additional signers in KArSL. Therefore, any true independent evaluation requires newly recruited human volunteers who were not part of the KArSL recordings or model development.
+2. **Frozen Model Protocol:** Evaluate the existing saved deployment models (`data/models/research/{svm,cnn}`) on the new volunteers **without modifying** feature schemas, network architectures, or hyperparameters.
+3. **Student/Volunteer Verification:** Ingest local video recordings from new volunteer participants using the independent human evaluation workflow (`src/research/independent_evaluation.py`).
 4. **Citation Reference:**
    > **Sidig, A. A. I., Luqman, H., Mahmoud, S., & Mohandes, M. (2021).** *KArSL: Arabic Sign Language Database.* ACM Transactions on Asian and Low-Resource Language Information Processing, 20(1), Article 14. DOI: 10.1145/3423420.
 
@@ -142,3 +142,4 @@ To establish a definitive, unbiased field estimate without test-guided selection
 - **Final Commit Hash:** `584842a` (and follow-up QA validation commit)
 - **Branch:** `main`
 - **Remote Repository:** [https://github.com/xdc7-css/Vision-Based-Sign-Language-Recognition](https://github.com/xdc7-css/Vision-Based-Sign-Language-Recognition)
+

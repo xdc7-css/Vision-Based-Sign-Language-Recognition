@@ -279,3 +279,97 @@ def test_unseen_signer_evaluator_workflow() -> None:
     seq_res = evaluator.verify_30_frame_sequence_handling()
     assert seq_res["status"] == "PASS"
     assert seq_res["short_buffer_rejected"] is True
+
+
+def test_independent_evaluation_workflow(tmp_path: Any) -> None:
+    from src.research.independent_evaluation import IndependentEvaluationManager
+
+    mgr = IndependentEvaluationManager(base_dir=tmp_path / "ind_eval")
+
+    # Initial state should be pending volunteer recordings
+    status = mgr.get_status()
+    assert status["status"] == "PENDING_VOLUNTEER_RECORDINGS"
+    assert status["is_evaluated"] is False
+    assert status["volunteers_count"] == 0
+
+    # Register volunteer
+    vol = mgr.register_volunteer("Fatima Al-Basri", "Webcam 720p")
+    assert vol["name"] == "Fatima Al-Basri"
+    assert vol["volunteer_id"].startswith("vol_")
+
+    vols = mgr.list_volunteers()
+    assert len(vols) == 1
+    assert vols[0]["name"] == "Fatima Al-Basri"
+
+    # Progress tracking for 10 classes
+    prog = mgr.get_volunteer_progress(vol["volunteer_id"])
+    assert prog["total_recorded"] == 0
+    assert prog["total_target"] == 50
+    assert len(prog["progress_by_sign"]) == 10
+
+    # Test saving an evaluation recording (dummy frames)
+    dummy_frames = [np.zeros((240, 320, 3), dtype=np.uint8) for _ in range(15)]
+    record_entry = mgr.save_recording(
+        volunteer_id=vol["volunteer_id"],
+        sign_id="0001",
+        rep_idx=1,
+        frames=dummy_frames,
+        fps=30.0,
+    )
+    assert record_entry["volunteer_id"] == vol["volunteer_id"]
+    assert record_entry["sign_id"] == "0001"
+    assert record_entry["frame_count"] == 15
+    assert record_entry["is_accepted"] is True
+
+    # Check updated progress
+    prog_after = mgr.get_volunteer_progress(vol["volunteer_id"])
+    assert prog_after["total_recorded"] == 1
+    assert prog_after["progress_by_sign"]["0001"]["reps_completed"] == 1
+
+
+def test_independent_evaluation_fastapi_endpoints() -> None:
+    client = TestClient(app)
+
+    # 1. GET /api/research/independent-eval/status
+    res = client.get("/api/research/independent-eval/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert "status" in data
+    assert data["status"] in ("PENDING_VOLUNTEER_RECORDINGS", "EVALUATED")
+
+    # 2. GET /api/research/independent-eval/volunteers
+    res_vols = client.get("/api/research/independent-eval/volunteers")
+    assert res_vols.status_code == 200
+    assert isinstance(res_vols.json(), list)
+
+    # 3. POST /api/research/independent-eval/volunteers
+    res_reg = client.post(
+        "/api/research/independent-eval/volunteers",
+        json={"name": "API Test Volunteer", "notes": "Automated pytest run"},
+    )
+    assert res_reg.status_code == 200
+    reg_data = res_reg.json()
+    assert reg_data["name"] == "API Test Volunteer"
+    assert "volunteer_id" in reg_data
+
+    # 4. GET /api/research/independent-eval/volunteers/{id}/progress
+    res_prog = client.get(f"/api/research/independent-eval/volunteers/{reg_data['volunteer_id']}/progress")
+    assert res_prog.status_code == 200
+    prog_data = res_prog.json()
+    assert prog_data["volunteer_id"] == reg_data["volunteer_id"]
+    assert prog_data["total_target"] == 50
+
+    # 5. POST /api/research/independent-eval/evaluate
+    res_eval = client.post("/api/research/independent-eval/evaluate")
+    assert res_eval.status_code == 200
+    eval_data = res_eval.json()
+    assert "status" in eval_data
+
+    # Clean up test volunteer from disk to preserve pristine state
+    from backend.api.research import research_service
+    mgr = research_service.independent_eval_manager
+    remaining_vols = [v for v in mgr.list_volunteers() if v["volunteer_id"] != reg_data["volunteer_id"]]
+    with open(mgr.volunteers_file, "w", encoding="utf-8") as f:
+        json.dump(remaining_vols, f, ensure_ascii=False, indent=2)
+
+

@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from src.research.cnn_pipeline import ResearchCNNPipeline
 from src.research.evaluator import ResearchScientificEvaluator
+from src.research.independent_evaluation import IndependentEvaluationManager
 from src.research.karsl_dataset import KArSLDatasetManager
 from src.research.svm_pipeline import ResearchSVMPipeline
 
@@ -28,6 +29,7 @@ class ResearchService:
         self.svm_pipeline = ResearchSVMPipeline()
         self.cnn_pipeline = ResearchCNNPipeline()
         self.evaluator = ResearchScientificEvaluator(dataset_manager=self.dm)
+        self.independent_eval_manager = IndependentEvaluationManager()
 
         self._active_job: Optional[dict[str, Any]] = None
         self._lock = threading.Lock()
@@ -38,6 +40,7 @@ class ResearchService:
         svm_trained = self.svm_pipeline.is_trained()
         cnn_trained = self.cnn_pipeline.is_trained()
         latest_comp = self.get_latest_comparison()
+        ind_status = self.independent_eval_manager.get_status()
 
         return {
             "dataset": ds_status,
@@ -56,6 +59,7 @@ class ResearchService:
                 },
             },
             "comparison": latest_comp,
+            "independent_evaluation": ind_status,
             "active_job": self._active_job,
         }
 
@@ -158,4 +162,38 @@ class ResearchService:
             with self._lock:
                 self._active_job = {"job": "run_comparison", "status": "failed", "error": str(e)}
             raise
+
+    # ─── Independent Human Evaluation Methods ──────────────────────────────
+
+    def get_independent_eval_status(self) -> dict[str, Any]:
+        """Get status of independent human volunteer evaluation."""
+        return self.independent_eval_manager.get_status()
+
+    def list_independent_volunteers(self) -> list[dict[str, Any]]:
+        """List registered volunteer participants."""
+        return self.independent_eval_manager.list_volunteers()
+
+    def register_independent_volunteer(self, name: str, notes: str = "") -> dict[str, Any]:
+        """Register a new human volunteer for independent testing."""
+        return self.independent_eval_manager.register_volunteer(name=name, notes=notes)
+
+    def get_volunteer_progress(self, volunteer_id: str) -> dict[str, Any]:
+        """Get recording progress for a given volunteer."""
+        return self.independent_eval_manager.get_volunteer_progress(volunteer_id=volunteer_id)
+
+    def run_independent_evaluation(self) -> dict[str, Any]:
+        """Execute frozen model evaluation on independent volunteer recordings."""
+        with self._lock:
+            self._active_job = {"job": "independent_evaluation", "status": "running"}
+
+        try:
+            results = self.independent_eval_manager.evaluate_independent_dataset()
+            with self._lock:
+                self._active_job = None
+            return results
+        except Exception as e:
+            with self._lock:
+                self._active_job = {"job": "independent_evaluation", "status": "failed", "error": str(e)}
+            raise
+
 

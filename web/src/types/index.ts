@@ -216,11 +216,93 @@ export interface ResearchStatusResponse {
     cnn: ResearchModelStatus;
   };
   comparison: ResearchComparisonMetrics | null;
+  independent_evaluation?: IndependentEvalStatus;
   active_job?: {
     job: string;
     status: string;
     error?: string;
   } | null;
+}
+
+export interface VolunteerInfo {
+  volunteer_id: string;
+  name: string;
+  notes?: string;
+  registered_at: number;
+  completed_signs: number;
+  total_recordings: number;
+}
+
+export interface VolunteerProgress {
+  volunteer_id: string;
+  total_recorded: number;
+  total_target: number;
+  is_complete: boolean;
+  idle_samples_count: number;
+  progress_by_sign: Record<
+    string,
+    {
+      name_ar: string;
+      name_en: string;
+      reps_completed: number;
+      target_reps: number;
+      is_complete: boolean;
+    }
+  >;
+}
+
+export interface IndependentEvalStatus {
+  status: string; // 'PENDING_VOLUNTEER_RECORDINGS' | 'EVALUATED'
+  is_evaluated: boolean;
+  message: string;
+  volunteers_count: number;
+  accepted_recordings_count?: number;
+  total_manifest_recordings?: number;
+  target_classes?: string[];
+  target_reps_per_volunteer?: number;
+  tracking_success_rate?: number;
+  tracking_failure_count?: number;
+  total_tested_recordings?: number;
+  raw_overall_accuracy?: {
+    svm: number;
+    cnn: number;
+  };
+  conditioned_accuracy?: {
+    svm: number;
+    cnn: number;
+  };
+  conditioned_macro_f1?: {
+    svm: number;
+    cnn: number;
+  };
+  latency_ms?: {
+    svm: number;
+    cnn: number;
+  };
+  idle_evaluation?: {
+    idle_recordings_tested: number;
+    false_positive_count_svm: number;
+    false_positive_count_cnn: number;
+    svm_false_positive_rate?: number;
+    cnn_false_positive_rate?: number;
+    note?: string;
+  };
+  confusion_matrices?: {
+    classes: string[];
+    svm: number[][];
+    cnn: number[][];
+  };
+  sample_details?: Array<{
+    record_id: string;
+    volunteer_id: string;
+    true_class: string;
+    tracking_success: boolean;
+    svm_pred: string;
+    cnn_pred: string;
+    svm_correct: boolean;
+    cnn_correct: boolean;
+  }>;
+  evaluation_date?: number;
 }
 
 export interface AvailableModel {

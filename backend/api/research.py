@@ -31,6 +31,11 @@ class ComparisonRequest(BaseModel):
     fold: str = "test_Signer03"
 
 
+class RegisterVolunteerRequest(BaseModel):
+    name: str
+    notes: str = ""
+
+
 @router.get("/status")
 def get_research_status() -> dict[str, Any]:
     """Get research dataset, model checkpoints, and comparison report status."""
@@ -83,4 +88,46 @@ def get_latest_comparison() -> dict[str, Any]:
     if not comp:
         raise HTTPException(status_code=404, detail="No scientific comparison has been executed yet.")
     return comp
+
+
+# ─── Independent Human Evaluation Endpoints ─────────────────────────────────
+
+@router.get("/independent-eval/status")
+def get_independent_eval_status() -> dict[str, Any]:
+    """Get current status of independent human evaluation."""
+    return research_service.get_independent_eval_status()
+
+
+@router.get("/independent-eval/volunteers")
+def list_independent_volunteers() -> list[dict[str, Any]]:
+    """List registered volunteers for independent evaluation."""
+    return research_service.list_independent_volunteers()
+
+
+@router.post("/independent-eval/volunteers")
+def register_independent_volunteer(req: RegisterVolunteerRequest) -> dict[str, Any]:
+    """Register a new human volunteer for independent testing."""
+    try:
+        return research_service.register_independent_volunteer(name=req.name, notes=req.notes)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/independent-eval/volunteers/{volunteer_id}/progress")
+def get_volunteer_progress(volunteer_id: str) -> dict[str, Any]:
+    """Get recording progress for a given volunteer."""
+    try:
+        return research_service.get_volunteer_progress(volunteer_id=volunteer_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/independent-eval/evaluate")
+def run_independent_evaluation() -> dict[str, Any]:
+    """Execute frozen model evaluation on independent volunteer recordings."""
+    try:
+        return research_service.run_independent_evaluation()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 

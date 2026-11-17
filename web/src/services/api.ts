@@ -3,11 +3,14 @@ import type {
   AvailableModel,
   DatasetSummary,
   GestureClass,
+  IndependentEvalStatus,
   ResearchComparisonMetrics,
   ResearchStatusResponse,
   SampleInfo,
   TrainingJobStatus,
   TrainingReadiness,
+  VolunteerInfo,
+  VolunteerProgress,
 } from '../types';
 
 const API_BASE = '';
@@ -269,4 +272,66 @@ export async function fetchResearchComparison(): Promise<ResearchComparisonMetri
   }
   return res.json();
 }
+
+// ── Independent Human Evaluation Endpoints ─────────────────────────────────
+
+export async function fetchIndependentEvalStatus(): Promise<IndependentEvalStatus> {
+  const res = await fetch(`${API_BASE}/api/research/independent-eval/status`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to fetch independent evaluation status');
+  }
+  return res.json();
+}
+
+export async function listIndependentVolunteers(): Promise<VolunteerInfo[]> {
+  const res = await fetch(`${API_BASE}/api/research/independent-eval/volunteers`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to list volunteers');
+  }
+  return res.json();
+}
+
+export async function registerIndependentVolunteer(
+  name: string,
+  notes = ''
+): Promise<VolunteerInfo> {
+  const res = await fetch(`${API_BASE}/api/research/independent-eval/volunteers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, notes }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to register volunteer');
+  }
+  return res.json();
+}
+
+export async function fetchVolunteerProgress(
+  volunteerId: string
+): Promise<VolunteerProgress> {
+  const res = await fetch(
+    `${API_BASE}/api/research/independent-eval/volunteers/${volunteerId}/progress`
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to fetch volunteer progress');
+  }
+  return res.json();
+}
+
+export async function runIndependentEvaluation(): Promise<IndependentEvalStatus> {
+  const res = await fetch(`${API_BASE}/api/research/independent-eval/evaluate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to execute independent evaluation');
+  }
+  return res.json();
+}
+
 

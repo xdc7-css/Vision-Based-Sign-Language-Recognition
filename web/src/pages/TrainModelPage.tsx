@@ -16,6 +16,11 @@ import {
   Check,
   AlertCircle,
   BookOpen,
+  Users,
+  UserPlus,
+  ShieldAlert,
+  Video,
+  Info,
 } from 'lucide-react';
 import {
   fetchTrainingReadiness,
@@ -28,12 +33,20 @@ import {
   trainResearchCNN,
   runResearchComparison,
   selectActiveModel,
+  fetchIndependentEvalStatus,
+  listIndependentVolunteers,
+  registerIndependentVolunteer,
+  fetchVolunteerProgress,
+  runIndependentEvaluation,
 } from '../services/api';
 import type {
   TrainingJobStatus,
   TrainingReadiness,
   ResearchStatusResponse,
   ResearchComparisonMetrics,
+  IndependentEvalStatus,
+  VolunteerInfo,
+  VolunteerProgress,
 } from '../types';
 
 interface TrainModelPageProps {
@@ -66,6 +79,18 @@ export const TrainModelPage: React.FC<TrainModelPageProps> = ({
   const [researchActionText, setResearchActionText] = useState<string>('');
   const [selectedConfusionModel, setSelectedConfusionModel] = useState<'svm' | 'cnn' | null>(null);
 
+  // Independent Human Evaluation State
+  const [indEvalStatus, setIndEvalStatus] = useState<IndependentEvalStatus | null>(null);
+  const [volunteers, setVolunteers] = useState<VolunteerInfo[]>([]);
+  const [selectedVolunteer, setSelectedVolunteer] = useState<string>('');
+  const [volunteerProgress, setVolunteerProgress] = useState<VolunteerProgress | null>(null);
+  const [newVolunteerName, setNewVolunteerName] = useState<string>('');
+  const [newVolunteerNotes, setNewVolunteerNotes] = useState<string>('');
+  const [isIndEvalBusy, setIsIndEvalBusy] = useState<boolean>(false);
+  const [indEvalActionText, setIndEvalActionText] = useState<string>('');
+  const [showSampleBreakdown, setShowSampleBreakdown] = useState<boolean>(false);
+  const [selectedIndConfusionModel, setSelectedIndConfusionModel] = useState<'svm' | 'cnn' | null>(null);
+
   // Load readiness
   const loadReadiness = async () => {
     try {
@@ -89,10 +114,68 @@ export const TrainModelPage: React.FC<TrainModelPageProps> = ({
     }
   };
 
+  // Load independent evaluation status and volunteers
+  const loadIndEval = async () => {
+    try {
+      const [st, vols] = await Promise.all([
+        fetchIndependentEvalStatus(),
+        listIndependentVolunteers(),
+      ]);
+      setIndEvalStatus(st);
+      setVolunteers(vols);
+      if (vols.length > 0 && !selectedVolunteer) {
+        setSelectedVolunteer(vols[0].volunteer_id);
+      }
+    } catch (err) {
+      console.error('Failed to load independent evaluation status:', err);
+    }
+  };
+
   useEffect(() => {
     loadReadiness();
     loadResearch();
+    loadIndEval();
   }, []);
+
+  useEffect(() => {
+    if (selectedVolunteer) {
+      fetchVolunteerProgress(selectedVolunteer)
+        .then(setVolunteerProgress)
+        .catch((err) => console.error('Failed to fetch volunteer progress:', err));
+    } else {
+      setVolunteerProgress(null);
+    }
+  }, [selectedVolunteer]);
+
+  // Volunteer Action Handlers
+  const handleRegisterVolunteer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVolunteerName.trim()) return;
+    try {
+      const v = await registerIndependentVolunteer(newVolunteerName.trim(), newVolunteerNotes.trim());
+      setNewVolunteerName('');
+      setNewVolunteerNotes('');
+      await loadIndEval();
+      setSelectedVolunteer(v.volunteer_id);
+    } catch (err: any) {
+      alert(err.message || 'Failed to register volunteer');
+    }
+  };
+
+  const handleRunIndEvaluation = async () => {
+    setIsIndEvalBusy(true);
+    setIndEvalActionText('Evaluating frozen SVM and CNN on independent volunteer recordings...');
+    try {
+      const res = await runIndependentEvaluation();
+      setIndEvalStatus(res);
+      await loadIndEval();
+    } catch (err: any) {
+      alert(err.message || 'Failed to run independent evaluation');
+    } finally {
+      setIsIndEvalBusy(false);
+      setIndEvalActionText('');
+    }
+  };
 
   // Research Action Handlers
   const handlePrepareResearchDataset = async () => {
@@ -955,6 +1038,553 @@ export const TrainModelPage: React.FC<TrainModelPageProps> = ({
                 ) : (
                   <p className="text-xs text-[#94A3B8]">Confusion matrix data not available.</p>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── INDEPENDENT HUMAN EVALUATION CARD ──────────────────────────── */}
+      <div className="bg-[#151B24] border border-[#2B3442] rounded-xl p-6 shadow-xl space-y-6">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#2B3442] pb-5">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-12 h-12 rounded-xl bg-[#8B5CF6]/20 text-[#A78BFA] flex items-center justify-center shrink-0">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2.5">
+                <h3 className="text-base font-bold text-[#F3F4F6]">
+                  Independent Human Recognition Evaluation
+                </h3>
+                <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30">
+                  Unseen Human Volunteers
+                </span>
+                {indEvalStatus?.is_evaluated ? (
+                  <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/30 flex items-center space-x-1">
+                    <span>●</span>
+                    <span>Evaluated ({indEvalStatus.total_tested_recordings} Recordings)</span>
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#F59E0B]/20 text-[#F59E0B] border border-[#F59E0B]/30 flex items-center space-x-1">
+                    <span>⚠️</span>
+                    <span>Status: PENDING_VOLUNTEER_RECORDINGS</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[#94A3B8] mt-0.5">
+                Scientific Testing Protocol: <span className="text-[#F3F4F6] font-semibold">10 Predefined Signs (0–9) × 5 Repetitions per Person (50 recordings/volunteer)</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 text-xs bg-[#101419] border border-[#2B3442] rounded-lg px-3 py-1.5 text-[#94A3B8]">
+            <ShieldAlert className="w-3.5 h-3.5 text-[#F59E0B]" />
+            <span>Strict Isolation: <strong className="text-[#F3F4F6]">Zero Retraining on Evaluation Data</strong></span>
+          </div>
+        </div>
+
+        {/* Methodology & Academic Integrity Callout */}
+        <div className="bg-[#1E1B4B]/40 border border-[#4338CA]/40 rounded-xl p-4 flex items-start space-x-3.5">
+          <div className="w-9 h-9 rounded-lg bg-[#6366F1]/20 text-[#818CF8] flex items-center justify-center shrink-0 mt-0.5">
+            <Info className="w-5 h-5" />
+          </div>
+          <div className="text-xs space-y-1.5">
+            <div className="text-sm font-bold text-[#A5B4FC] flex items-center space-x-2">
+              <span>Scientific Quality Assurance & Error Disentanglement</span>
+            </div>
+            <p className="text-[#94A3B8] leading-relaxed">
+              The original KArSL-502 dataset contains exactly 3 signers (Signer01–Signer03). To reliably evaluate generalization to real users, newly recruited human volunteers who were not part of training perform 10 Arabic digits (0–9) with 5 repetitions per sign. All recordings and ground-truth labels are stored isolated in <code className="text-[#818CF8] bg-[#101419] px-1.5 py-0.5 rounded">data/research/independent_evaluation/</code> and are <strong>never mixed into training datasets or retrained on</strong>.
+            </p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#A5B4FC]/80 pt-0.5">
+              <span>• <strong>Disentangled Errors:</strong> Separates MediaPipe tracking dropouts from model classification errors</span>
+              <span>• <strong>Idle Monitoring:</strong> Measures false-positive rate during resting movements</span>
+              <span>• <strong>Dual Frozen Models:</strong> Evaluates frozen SVM and 1D Temporal CNN simultaneously</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Status Strip */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="bg-[#1B2330] border border-[#2B3442] rounded-lg p-3">
+            <div className="text-[#94A3B8] text-[11px] flex items-center justify-between">
+              <span>Volunteers Registered</span>
+              <Users className="w-3.5 h-3.5 text-[#8B5CF6]" />
+            </div>
+            <div className="text-sm font-bold text-[#F3F4F6] mt-1">
+              {volunteers.length} Participants
+            </div>
+            <div className="text-[11px] text-[#64748B]">
+              New non-KArSL individuals
+            </div>
+          </div>
+
+          <div className="bg-[#1B2330] border border-[#2B3442] rounded-lg p-3">
+            <div className="text-[#94A3B8] text-[11px] flex items-center justify-between">
+              <span>Evaluation Videos</span>
+              <Video className="w-3.5 h-3.5 text-[#38BDF8]" />
+            </div>
+            <div className="text-sm font-bold text-[#F3F4F6] mt-1">
+              {indEvalStatus?.total_manifest_recordings || 0} Recorded Videos
+            </div>
+            <div className="text-[11px] text-[#64748B]">
+              Target: 50 videos per volunteer
+            </div>
+          </div>
+
+          <div className="bg-[#1B2330] border border-[#2B3442] rounded-lg p-3">
+            <div className="text-[#94A3B8] text-[11px] flex items-center justify-between">
+              <span>Tracking Success Rate</span>
+              {indEvalStatus?.is_evaluated ? (
+                <Check className="w-3.5 h-3.5 text-[#10B981]" />
+              ) : (
+                <span className="text-[10px] text-[#64748B]">Pending</span>
+              )}
+            </div>
+            <div className="text-sm font-bold text-[#F3F4F6] mt-1">
+              {indEvalStatus?.is_evaluated && indEvalStatus.tracking_success_rate !== undefined
+                ? `${(indEvalStatus.tracking_success_rate * 100).toFixed(1)}%`
+                : 'Pending Sessions'}
+            </div>
+            <div className="text-[11px] text-[#64748B]">
+              MediaPipe landmark detection
+            </div>
+          </div>
+
+          <div className="bg-[#1B2330] border border-[#2B3442] rounded-lg p-3">
+            <div className="text-[#94A3B8] text-[11px] flex items-center justify-between">
+              <span>Evaluation Status</span>
+              {indEvalStatus?.is_evaluated ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
+              ) : (
+                <AlertCircle className="w-3.5 h-3.5 text-[#F59E0B]" />
+              )}
+            </div>
+            <div className="text-sm font-bold text-[#F3F4F6] mt-1">
+              {indEvalStatus?.is_evaluated ? 'Evaluated' : 'Pending Recordings'}
+            </div>
+            <div className="text-[11px] text-[#64748B]">
+              {indEvalStatus?.is_evaluated ? 'Frozen models tested' : 'Zero synthetic data'}
+            </div>
+          </div>
+        </div>
+
+        {/* Volunteer Management & Session Progress */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Volunteer Registration */}
+          <div className="bg-[#101419] border border-[#2B3442] rounded-xl p-4 space-y-3">
+            <h4 className="text-xs font-bold text-[#F3F4F6] tracking-wide uppercase flex items-center space-x-2">
+              <UserPlus className="w-4 h-4 text-[#8B5CF6]" />
+              <span>Register New Volunteer Participant</span>
+            </h4>
+            <form onSubmit={handleRegisterVolunteer} className="space-y-3">
+              <div>
+                <label className="text-[11px] text-[#94A3B8] block mb-1">Volunteer Name / Alias</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Volunteer 1 (Ali)"
+                  value={newVolunteerName}
+                  onChange={(e) => setNewVolunteerName(e.target.value)}
+                  className="w-full bg-[#1B2330] border border-[#2B3442] rounded-lg px-3 py-1.5 text-xs text-[#F3F4F6] placeholder-[#64748B] focus:outline-none focus:border-[#8B5CF6]"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-[#94A3B8] block mb-1">Notes / Camera Setup</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Laptop webcam, natural indoor lighting"
+                  value={newVolunteerNotes}
+                  onChange={(e) => setNewVolunteerNotes(e.target.value)}
+                  className="w-full bg-[#1B2330] border border-[#2B3442] rounded-lg px-3 py-1.5 text-xs text-[#F3F4F6] placeholder-[#64748B] focus:outline-none focus:border-[#8B5CF6]"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!newVolunteerName.trim()}
+                className="px-3.5 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg text-xs font-semibold transition-all disabled:opacity-50 flex items-center space-x-1.5"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Register Volunteer</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Volunteer Protocol Progress */}
+          <div className="bg-[#101419] border border-[#2B3442] rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-[#F3F4F6] tracking-wide uppercase flex items-center space-x-2">
+                <BookOpen className="w-4 h-4 text-[#38BDF8]" />
+                <span>Protocol Progress: 10 Predefined Signs</span>
+              </h4>
+              {volunteers.length > 0 && (
+                <select
+                  value={selectedVolunteer}
+                  onChange={(e) => setSelectedVolunteer(e.target.value)}
+                  className="bg-[#1B2330] border border-[#2B3442] rounded-lg px-2 py-1 text-xs text-[#F3F4F6] focus:outline-none"
+                >
+                  {volunteers.map((v) => (
+                    <option key={v.volunteer_id} value={v.volunteer_id}>
+                      {v.name} ({v.total_recordings}/50)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {volunteers.length === 0 ? (
+              <div className="text-xs text-[#94A3B8] py-4 text-center">
+                No volunteers registered yet. Register a volunteer on the left to begin recording sessions.
+              </div>
+            ) : volunteerProgress ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs text-[#94A3B8]">
+                  <span>Total Progress: {volunteerProgress.total_recorded} / {volunteerProgress.total_target} recordings</span>
+                  <span className="font-semibold text-[#F3F4F6]">
+                    {Math.round((volunteerProgress.total_recorded / Math.max(1, volunteerProgress.total_target)) * 100)}%
+                  </span>
+                </div>
+                <div className="w-full bg-[#1B2330] h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-[#8B5CF6] h-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, Math.round((volunteerProgress.total_recorded / Math.max(1, volunteerProgress.total_target)) * 100))}%`,
+                    }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-center text-xs">
+                  {Object.entries(volunteerProgress.progress_by_sign).map(([signId, info]) => (
+                    <div
+                      key={signId}
+                      className={`p-1.5 rounded border text-[11px] ${
+                        info.is_complete
+                          ? 'bg-[#10B981]/15 border-[#10B981]/40 text-[#10B981]'
+                          : info.reps_completed > 0
+                          ? 'bg-[#38BDF8]/15 border-[#38BDF8]/40 text-[#38BDF8]'
+                          : 'bg-[#1B2330] border-[#2B3442] text-[#94A3B8]'
+                      }`}
+                    >
+                      <div className="font-arabic font-bold">{info.name_ar}</div>
+                      <div className="text-[10px] text-[#64748B]">{info.reps_completed}/{info.target_reps}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-[#94A3B8] py-2">Select a volunteer to view recording progress.</div>
+            )}
+          </div>
+        </div>
+
+        {/* Action Toolbar */}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleRunIndEvaluation}
+            disabled={isIndEvalBusy}
+            className="px-4 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg text-xs font-semibold transition-all shadow-md flex items-center space-x-1.5 disabled:opacity-50"
+          >
+            <Activity className="w-3.5 h-3.5" />
+            <span>Run Frozen Evaluation (SVM vs CNN)</span>
+          </button>
+
+          {isIndEvalBusy && (
+            <div className="flex items-center space-x-2 text-xs text-[#A78BFA] font-medium ml-2">
+              <RotateCw className="w-3.5 h-3.5 animate-spin" />
+              <span>{indEvalActionText}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Status Callout if Pending */}
+        {!indEvalStatus?.is_evaluated && (
+          <div className="bg-[#101419] border border-[#F59E0B]/30 rounded-xl p-4 flex items-start space-x-3 text-xs">
+            <AlertCircle className="w-5 h-5 text-[#F59E0B] shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="font-bold text-[#F59E0B] block">
+                Independent Evaluation Status: PENDING_VOLUNTEER_RECORDINGS
+              </span>
+              <p className="text-[#94A3B8] leading-relaxed">
+                {indEvalStatus?.message || (
+                  "In accordance with university research integrity standards, performance on unseen individuals remains strictly unmeasured until genuine volunteers complete the test protocol. No synthetic or training data is substituted."
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Evaluation Results (When Evaluated) */}
+        {indEvalStatus?.is_evaluated && (
+          <div className="space-y-4 pt-2 border-t border-[#2B3442]">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-[#F3F4F6] tracking-wide uppercase">
+                Independent Volunteer Benchmark Results (Disentangled Tracking & Classification)
+              </h4>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setSelectedIndConfusionModel(selectedIndConfusionModel === 'svm' ? null : 'svm')}
+                  className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                    selectedIndConfusionModel === 'svm'
+                      ? 'bg-[#38BDF8]/20 border-[#38BDF8] text-[#38BDF8]'
+                      : 'bg-[#1B2330] border-[#2B3442] text-[#94A3B8] hover:text-[#F3F4F6]'
+                  }`}
+                >
+                  Volunteer SVM Confusion Matrix
+                </button>
+                <button
+                  onClick={() => setSelectedIndConfusionModel(selectedIndConfusionModel === 'cnn' ? null : 'cnn')}
+                  className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                    selectedIndConfusionModel === 'cnn'
+                      ? 'bg-[#14B8A6]/20 border-[#14B8A6] text-[#14B8A6]'
+                      : 'bg-[#1B2330] border-[#2B3442] text-[#94A3B8] hover:text-[#F3F4F6]'
+                  }`}
+                >
+                  Volunteer CNN Confusion Matrix
+                </button>
+                <button
+                  onClick={() => setShowSampleBreakdown(!showSampleBreakdown)}
+                  className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                    showSampleBreakdown
+                      ? 'bg-[#8B5CF6]/20 border-[#8B5CF6] text-[#8B5CF6]'
+                      : 'bg-[#1B2330] border-[#2B3442] text-[#94A3B8] hover:text-[#F3F4F6]'
+                  }`}
+                >
+                  {showSampleBreakdown ? 'Hide Sample Breakdown' : 'Show Sample Breakdown'}
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto bg-[#101419] border border-[#2B3442] rounded-xl">
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="border-b border-[#2B3442] text-[#94A3B8] bg-[#151B24]">
+                    <th className="py-3 px-4 font-semibold">Evaluation Metric</th>
+                    <th className="py-3 px-4 font-semibold text-[#38BDF8]">Model A: SVM (RBF)</th>
+                    <th className="py-3 px-4 font-semibold text-[#14B8A6]">Model B: 1D Temporal CNN</th>
+                    <th className="py-3 px-4 font-semibold">Scientific Disentanglement Interpretation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#2B3442]/60 font-mono">
+                  <tr>
+                    <td className="py-2.5 px-4 font-sans font-medium text-[#F3F4F6]">
+                      Landmark Tracking Rate
+                    </td>
+                    <td colSpan={2} className="py-2.5 px-4 text-[#38BDF8] font-bold text-center">
+                      {indEvalStatus.tracking_success_rate !== undefined
+                        ? `${(indEvalStatus.tracking_success_rate * 100).toFixed(1)}%`
+                        : '--'}
+                    </td>
+                    <td className="py-2.5 px-4 font-sans text-xs text-[#94A3B8]">
+                      Stage 1: Disentangles camera framing/tracking failures from model classifier weights
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 font-sans font-medium text-[#F3F4F6]">
+                      Conditioned Accuracy (Tracked)
+                    </td>
+                    <td className="py-2.5 px-4 text-[#F3F4F6]">
+                      {indEvalStatus.conditioned_accuracy?.svm !== undefined
+                        ? `${(indEvalStatus.conditioned_accuracy.svm * 100).toFixed(1)}%`
+                        : '--'}
+                    </td>
+                    <td className="py-2.5 px-4 text-[#10B981] font-bold">
+                      {indEvalStatus.conditioned_accuracy?.cnn !== undefined
+                        ? `${(indEvalStatus.conditioned_accuracy.cnn * 100).toFixed(1)}%`
+                        : '--'}
+                    </td>
+                    <td className="py-2.5 px-4 font-sans text-xs text-[#10B981]">
+                      Stage 2: Model classification accuracy measured exclusively when hands were successfully tracked
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 font-sans font-medium text-[#F3F4F6]">
+                      Conditioned Macro F1
+                    </td>
+                    <td className="py-2.5 px-4 text-[#F3F4F6]">
+                      {indEvalStatus.conditioned_macro_f1?.svm !== undefined
+                        ? `${(indEvalStatus.conditioned_macro_f1.svm * 100).toFixed(1)}%`
+                        : '--'}
+                    </td>
+                    <td className="py-2.5 px-4 text-[#10B981] font-bold">
+                      {indEvalStatus.conditioned_macro_f1?.cnn !== undefined
+                        ? `${(indEvalStatus.conditioned_macro_f1.cnn * 100).toFixed(1)}%`
+                        : '--'}
+                    </td>
+                    <td className="py-2.5 px-4 font-sans text-xs text-[#94A3B8]">
+                      Balanced performance across all 10 Arabic digit classes
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 font-sans font-medium text-[#F3F4F6]">
+                      Raw Overall Accuracy
+                    </td>
+                    <td className="py-2.5 px-4 text-[#F3F4F6]">
+                      {indEvalStatus.raw_overall_accuracy?.svm !== undefined
+                        ? `${(indEvalStatus.raw_overall_accuracy.svm * 100).toFixed(1)}%`
+                        : '--'}
+                    </td>
+                    <td className="py-2.5 px-4 text-[#F3F4F6]">
+                      {indEvalStatus.raw_overall_accuracy?.cnn !== undefined
+                        ? `${(indEvalStatus.raw_overall_accuracy.cnn * 100).toFixed(1)}%`
+                        : '--'}
+                    </td>
+                    <td className="py-2.5 px-4 font-sans text-xs text-[#94A3B8]">
+                      Combined system accuracy including any tracking dropouts
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 font-sans font-medium text-[#F3F4F6]">
+                      Idle False-Positive Rate
+                    </td>
+                    <td className="py-2.5 px-4 text-[#F3F4F6]">
+                      {indEvalStatus.idle_evaluation?.svm_false_positive_rate !== undefined
+                        ? `${(indEvalStatus.idle_evaluation.svm_false_positive_rate * 100).toFixed(1)}%`
+                        : '0.0%'}
+                    </td>
+                    <td className="py-2.5 px-4 text-[#10B981] font-bold">
+                      {indEvalStatus.idle_evaluation?.cnn_false_positive_rate !== undefined
+                        ? `${(indEvalStatus.idle_evaluation.cnn_false_positive_rate * 100).toFixed(1)}%`
+                        : '0.0%'}
+                    </td>
+                    <td className="py-2.5 px-4 font-sans text-xs text-[#94A3B8]">
+                      Percentage of resting/idle motions falsely triggering sign classification
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 font-sans font-medium text-[#F3F4F6]">
+                      Inference Latency
+                    </td>
+                    <td className="py-2.5 px-4 text-[#F3F4F6]">
+                      {indEvalStatus.latency_ms?.svm !== undefined
+                        ? `${indEvalStatus.latency_ms.svm.toFixed(2)} ms`
+                        : '--'}
+                    </td>
+                    <td className="py-2.5 px-4 text-[#F3F4F6]">
+                      {indEvalStatus.latency_ms?.cnn !== undefined
+                        ? `${indEvalStatus.latency_ms.cnn.toFixed(2)} ms`
+                        : '--'}
+                    </td>
+                    <td className="py-2.5 px-4 font-sans text-xs text-[#10B981]">
+                      Real-time inference speed on CPU
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Volunteer Confusion Matrix Drawer */}
+            {selectedIndConfusionModel && indEvalStatus.confusion_matrices && (
+              <div className="bg-[#101419] border border-[#2B3442] rounded-xl p-4 space-y-3 animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#F3F4F6]">
+                    Volunteer Evaluation: {selectedIndConfusionModel === 'svm' ? 'Model A (SVM)' : 'Model B (1D CNN)'} Confusion Matrix
+                  </span>
+                  <button
+                    onClick={() => setSelectedIndConfusionModel(null)}
+                    className="text-xs text-[#94A3B8] hover:text-[#F3F4F6]"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-center font-mono">
+                    <thead>
+                      <tr className="text-[#94A3B8] border-b border-[#2B3442]">
+                        <th className="p-2 text-left font-sans text-[11px]">True \ Pred</th>
+                        {indEvalStatus.confusion_matrices.classes.map((c: string) => (
+                          <th key={c} className="p-1 font-arabic text-xs text-[#8B5CF6]">
+                            {c}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedIndConfusionModel === 'svm'
+                        ? indEvalStatus.confusion_matrices.svm
+                        : indEvalStatus.confusion_matrices.cnn
+                      ).map((row: number[], i: number) => {
+                        const classNames = indEvalStatus.confusion_matrices!.classes;
+                        return (
+                          <tr key={i} className="border-b border-[#2B3442]/30 last:border-none">
+                            <td className="p-1.5 text-left font-arabic text-xs font-semibold text-[#F3F4F6]">
+                              {classNames[i]}
+                            </td>
+                            {row.map((val: number, j: number) => (
+                              <td
+                                key={j}
+                                className={`p-1 text-xs font-bold ${
+                                  i === j
+                                    ? val > 0
+                                      ? 'bg-[#10B981]/20 text-[#10B981]'
+                                      : 'text-[#64748B]'
+                                    : val > 0
+                                    ? 'bg-[#EF4444]/20 text-[#EF4444]'
+                                    : 'text-[#64748B]'
+                                }`}
+                              >
+                                {val}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sample Breakdown Drawer */}
+            {showSampleBreakdown && indEvalStatus.sample_details && (
+              <div className="bg-[#101419] border border-[#2B3442] rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#F3F4F6]">
+                    Individual Volunteer Sample Breakdown ({indEvalStatus.sample_details.length} Samples)
+                  </span>
+                  <button
+                    onClick={() => setShowSampleBreakdown(false)}
+                    className="text-xs text-[#94A3B8] hover:text-[#F3F4F6]"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="overflow-x-auto max-h-60">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-[#2B3442] text-[#94A3B8]">
+                        <th className="p-1.5">Volunteer</th>
+                        <th className="p-1.5">True Sign</th>
+                        <th className="p-1.5">Tracking Status</th>
+                        <th className="p-1.5">SVM Prediction</th>
+                        <th className="p-1.5">CNN Prediction</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2B3442]/40">
+                      {indEvalStatus.sample_details.map((s, idx) => (
+                        <tr key={idx}>
+                          <td className="p-1.5 font-mono text-[#94A3B8]">{s.volunteer_id}</td>
+                          <td className="p-1.5 font-arabic font-semibold text-[#F3F4F6]">{s.true_class}</td>
+                          <td className="p-1.5">
+                            {s.tracking_success ? (
+                              <span className="text-[#10B981] font-semibold">Tracked</span>
+                            ) : (
+                              <span className="text-[#EF4444] font-semibold">Failed Tracking</span>
+                            )}
+                          </td>
+                          <td className="p-1.5 font-arabic">
+                            <span className={s.svm_correct ? 'text-[#10B981]' : 'text-[#EF4444]'}>
+                              {s.svm_pred} {s.svm_correct ? '✓' : '✗'}
+                            </span>
+                          </td>
+                          <td className="p-1.5 font-arabic">
+                            <span className={s.cnn_correct ? 'text-[#10B981]' : 'text-[#EF4444]'}>
+                              {s.cnn_pred} {s.cnn_correct ? '✓' : '✗'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
