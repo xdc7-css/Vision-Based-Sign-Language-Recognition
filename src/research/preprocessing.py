@@ -49,17 +49,29 @@ class ResearchFeatureExtractor:
     def select_channels(self, sequence: np.ndarray) -> np.ndarray:
         """Select relevant channels according to feature_schema.
 
-        If sequence has 736 channels and schema is 'hands_only', extract 568:736 (168 dims).
+        Raises:
+            ValueError: If input feature dimensions do not match expected schemas.
         """
+        last_dim = sequence.shape[-1]
         if self.feature_schema == "hands_only":
-            if sequence.shape[-1] == 736:
+            if last_dim == 736:
                 return sequence[..., HANDS_SLICE]
-            elif sequence.shape[-1] == HANDS_CHANNELS:
+            elif last_dim == HANDS_CHANNELS:
                 return sequence
             else:
-                # Fallback / clip if unexpected dimension
-                return sequence[..., :HANDS_CHANNELS]
-        return sequence
+                raise ValueError(
+                    f"Invalid feature dimension {last_dim} for 'hands_only' schema. "
+                    f"Expected either 736 (full multimodal) or {HANDS_CHANNELS} (dual hands)."
+                )
+        elif self.feature_schema == "all_multimodal":
+            if last_dim != self.feat_dim:
+                raise ValueError(
+                    f"Invalid feature dimension {last_dim} for 'all_multimodal' schema. "
+                    f"Expected {self.feat_dim}."
+                )
+            return sequence
+        else:
+            raise ValueError(f"Unknown feature_schema '{self.feature_schema}'.")
 
     # ─── SVM Feature Engineering ───────────────────────────────────────────
 

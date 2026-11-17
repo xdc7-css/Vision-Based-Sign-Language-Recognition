@@ -232,3 +232,50 @@ def test_live_research_recognizer() -> None:
     res = cnn_rec.process_frame(dummy_frame)
     # Since dummy black frame has no landmarks, recognizer handles it safely (returns None or low conf)
     assert res is None or res.confidence >= 0.0
+
+
+def test_explicit_input_dimension_validation() -> None:
+    extractor = ResearchFeatureExtractor(feature_schema="hands_only")
+
+    # Valid shapes: (T, 736) or (T, 168)
+    valid_736 = np.zeros((30, 736), dtype=np.float32)
+    valid_168 = np.zeros((30, 168), dtype=np.float32)
+    assert extractor.select_channels(valid_736).shape == (30, 168)
+    assert extractor.select_channels(valid_168).shape == (30, 168)
+
+    # Invalid shape must raise explicit ValueError (no silent fallback slicing)
+    invalid_seq = np.zeros((30, 250), dtype=np.float32)
+    with pytest.raises(ValueError, match="Invalid feature dimension 250"):
+        extractor.select_channels(invalid_seq)
+
+    # Recognizer add_frame_features must also raise on unexpected dimension
+    rec = ResearchSignRecognizer(model_type="cnn")
+    with pytest.raises(ValueError, match="Invalid frame feature dimension 50"):
+        rec.add_frame_features(np.zeros(50, dtype=np.float32))
+
+
+def test_unseen_signer_evaluator_workflow() -> None:
+    from src.research.evaluate_new_recordings import UnseenSignerEvaluator
+
+    evaluator = UnseenSignerEvaluator()
+    # Check unseen data reporting (strictly reports PENDING instead of fabricating)
+    avail = evaluator.check_unseen_data_availability()
+    assert avail["status"] in ("PENDING_NEW_UNSEEN_RECORDINGS", "UNSEEN_RECORDINGS_AVAILABLE")
+    if not avail["available"]:
+        assert avail["video_count"] == 0
+
+    # Arabic class mapping verification
+    mapping = evaluator.verify_arabic_class_mapping()
+    assert mapping["status"] == "PASS"
+    assert mapping["classes_verified"] == 10
+
+    # Idle rejection verification
+    idle = evaluator.verify_idle_rejection()
+    assert idle["status"] == "PASS"
+    assert idle["cnn_idle_rejected"] is True
+    assert idle["svm_idle_rejected"] is True
+
+    # 30-frame sequence handling
+    seq_res = evaluator.verify_30_frame_sequence_handling()
+    assert seq_res["status"] == "PASS"
+    assert seq_res["short_buffer_rejected"] is True

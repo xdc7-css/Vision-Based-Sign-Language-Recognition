@@ -88,15 +88,22 @@ class ResearchSignRecognizer:
         return [c["name_ar"] for c in self.classes]
 
     def add_frame_features(self, frame_features: np.ndarray) -> None:
-        """Append a single frame's 736-dim features to the temporal rolling buffer."""
-        if len(frame_features) != self.feat_dim:
-            # Handle padding / slicing to exact feature dimension
-            padded = np.zeros(self.feat_dim, dtype=np.float32)
-            valid_len = min(len(frame_features), self.feat_dim)
-            padded[:valid_len] = frame_features[:valid_len]
-            frame_features = padded
+        """Append a single frame's features to the temporal rolling buffer.
 
-        self.frame_buffer.append(frame_features.astype(np.float32))
+        Accepts standard 736-dim multimodal frames (from LandmarkerProcessor)
+        or direct 168-dim dual-hand features. Raises ValueError on other dimensions.
+        """
+        arr = np.asarray(frame_features, dtype=np.float32)
+        if len(arr) == 736:
+            self.frame_buffer.append(arr)
+        elif len(arr) == 168:
+            full = np.zeros(736, dtype=np.float32)
+            full[568:736] = arr
+            self.frame_buffer.append(full)
+        else:
+            raise ValueError(
+                f"Invalid frame feature dimension {len(arr)}. Expected 736 (multimodal) or 168 (hands)."
+            )
 
     def predict_window(self) -> Optional[RecognitionResult]:
         """Perform classification on current temporal sliding window."""
@@ -105,6 +112,11 @@ class ResearchSignRecognizer:
 
         # Resample buffer to target seq_len (30 frames)
         seq = self.extractor.resample_sequence(list(self.frame_buffer), target_len=self.seq_len)
+
+        # Idle rejection: if buffer contains no detected hands or all zeros, reject
+        active_channels = self.extractor.select_channels(seq)
+        if float(np.max(np.abs(active_channels))) < 1e-4:
+            return None
 
         try:
             if "cnn" in self.model_type:
