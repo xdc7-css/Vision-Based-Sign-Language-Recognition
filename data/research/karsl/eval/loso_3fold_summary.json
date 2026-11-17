@@ -1,0 +1,28 @@
+{
+  "folds": {
+    "test_Signer01": {
+      "svm_acc": 0.325,
+      "svm_f1": 0.2602,
+      "cnn_acc": 0.4125,
+      "cnn_f1": 0.2811
+    },
+    "test_Signer02": {
+      "svm_acc": 0.2625,
+      "svm_f1": 0.2566,
+      "cnn_acc": 0.3625,
+      "cnn_f1": 0.357
+    },
+    "test_Signer03": {
+      "svm_acc": 0.275,
+      "svm_f1": 0.1764,
+      "cnn_acc": 0.25,
+      "cnn_f1": 0.1745
+    }
+  },
+  "average": {
+    "svm_accuracy": 0.2875,
+    "svm_f1": 0.2311,
+    "cnn_accuracy": 0.3417,
+    "cnn_f1": 0.2709
+  }
+}

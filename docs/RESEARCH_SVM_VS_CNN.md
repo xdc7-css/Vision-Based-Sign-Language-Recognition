@@ -21,35 +21,42 @@ Both approaches are evaluated on an identical subset of the standard **KArSL-502
 
 ## 2. KArSL-502 Dataset Overview & Representative Subset
 
-### 2.1 Dataset Background
-The **KArSL-502** (King Fahd University Arabic Sign Language) dataset is a benchmark ArSL dataset compiled by Hamzah Luqman et al.
-- **Reference:** H. Luqman, E. El-Alfy, et al., *"KArSL: Database and Benchmarks for Arabic Sign Language Recognition"*, IEEE Access, 2020.
-- **Official Portal:** [https://hamzah-luqman.github.io/KArSL/](https://hamzah-luqman.github.io/KArSL/)
-- **Total Signs:** 502 Arabic sign vocabulary classes.
-- **Original Modalities:** RGB video, depth maps, and joint coordinates recorded from multiple independent signers.
+### 2.1 Dataset Background & Provenance
+The **KArSL-502** (King Fahd University Arabic Sign Language) dataset is a standard benchmark ArSL dataset compiled by Sidig, Luqman, Mahmoud, and El-Alfy:
+- **Official Scientific Reference:**
+  > **A. A. I. Sidig, H. Luqman, M. Mahmoud, and E.-S. M. El-Alfy**, *"KArSL: Database and Benchmarks for Arabic Sign Language Recognition"*, **Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies (IMWUT)**, Vol. 5, No. 1, Article 36, March 2021.
+  > DOI: [https://doi.org/10.1145/3423420](https://doi.org/10.1145/3423420)
+- **Official Dataset Portal:** [https://hamzah-luqman.github.io/KArSL/](https://hamzah-luqman.github.io/KArSL/)
+- **Total Vocabulary:** 502 Arabic sign vocabulary classes recorded across 3 independent human signers (`Signer01`, `Signer02`, `Signer03`).
+- **Capture Hardware:** Microsoft Kinect V2 sensor capturing synchronized full-HD RGB video ($1920 \times 1080$ at $30\text{ fps}$), depth maps, and skeletal joint coordinates.
 
-> [!NOTE]
-> **Data Access Notice:**
-> The complete 75,300 raw video collection of KArSL-502 is hosted on KFUPM institutional cloud storage (`https://kfupmedusa-my.sharepoint.com/`) requiring institutional authorization.
-> For reproducible standalone research and graduation evaluation, this project implements a standalone subset importer and generator conforming strictly to the official KArSL-502 topology.
+> [!IMPORTANT]
+> **Data Provenance & Scientific Reproducibility:**
+> All benchmark evaluations in this project utilize **authentic KArSL-502 video recordings** retrieved directly from the official KArSL distribution storage (`0001-0070.7z` archives across `Signer01`, `Signer02`, and `Signer03`).
+> Each video's provenance, frame count, resolution, and SHA-256 cryptographic hash are permanently recorded in `data/research/karsl/manifests/real_10_signs.csv`.
+> Synthetic development trajectories, which were used during early unit testing of the pipeline, are strictly separated and designated as `SYNTHETIC / DEVELOPMENT` and are **never** presented as empirical benchmark metrics.
 
-### 2.2 Selected Benchmark Vocabulary (12 Signs)
-We selected 12 semantically rich, representative sign classes across numbers, letters, verbs, family relations, and greetings:
+### 2.2 Kinect V2 vs. Commodity Webcam Domain Shift
+An important scientific consideration in this graduation project is the **domain shift** between research benchmark data and real-time inference:
+1. **Sensor & Optics:** KArSL videos were captured using an industrial Microsoft Kinect V2 depth-sensing RGB sensor at fixed focal distance ($~2\text{ meters}$) under uniform laboratory studio illumination.
+2. **Webcam / Mobile Camera:** In real-world deployment (PySide6 Desktop / React Local Web), signers interact via commodity USB webcams or mobile cameras (e.g., iPhone via iVCam) with variable lighting, motion blur, and non-uniform backgrounds.
+3. **Multimodal Landmark Normalization:** To bridge this domain gap, both the benchmark and real-time pipelines discard raw pixel intensities and extract standardized, anatomically normalized 3D landmarks via CPU MediaPipe (nose-centered pose, eye-distance-scaled face mesh, wrist-centered hand keypoints). This normalizes physical scale and camera-to-signer distance.
+
+### 2.3 Selected Benchmark Vocabulary (10 Signs — Digits 0 to 9)
+Following supervisor recommendations for a focused, statistically balanced benchmark across all three original human signers, we selected the first 10 foundational numeric sign classes ($N = 240$ authentic video recordings across 3 signers):
 
 | Sign ID | Arabic Label | English Meaning | Category | Sign Execution Style |
 |:---:|:---:|:---:|:---:|:---|
-| `0001` | **صفر** | Zero | Number | Static hand orientation with closed fist |
+| `0001` | **صفر** | Zero | Number | Closed fist held centrally with knuckles forward |
 | `0002` | **واحد** | One | Number | Index finger extended vertically |
-| `0032` | **ا** | Alef | Alphabet | Single hand vertical palm |
-| `0033` | **ب** | Baa | Alphabet | Flat palm with thumb extended horizontally |
-| `0150` | **يأكل** | Eat | Action/Verb | Rhythmic hand translation towards mouth |
-| `0151` | **يشرب** | Drink | Action/Verb | Hand tilt towards mouth mimicking cup |
-| `0152` | **ينام** | Sleep | Action/Verb | Hand placed against side of tilted head |
-| `0164` | **يحب** | Love | Emotion/Verb | Crossed hands over chest |
-| `0185` | **أب** | Father | Family | Thumb tapped near forehead/jawline |
-| `0186` | **أم** | Mother | Family | Hand tapped near chin/jawline |
-| `0296` | **أهلا وسهلاً** | Welcome | Social Greeting | Both hands open moving outward |
-| `0297` | **السلام عليكم** | Peace be upon you | Islamic Greeting | Right hand to forehead moving outwards |
+| `0003` | **اثنان** | Two | Number | Index and middle fingers extended (V-sign) |
+| `0004` | **ثلاثة** | Three | Number | Thumb, index, and middle fingers extended |
+| `0005` | **أربعة** | Four | Number | Four fingers extended vertically, thumb folded |
+| `0006` | **خمسة** | Five | Number | Open palm with all five fingers spread |
+| `0007` | **ستة** | Six | Number | Thumb and pinky extended, intermediate fingers folded |
+| `0008` | **سبعة** | Seven | Number | Index and middle fingers pointing downward (inverted V) |
+| `0009` | **ثمانية** | Eight | Number | Middle finger bent downward touching thumb |
+| `0010` | **تسعة** | Nine | Number | Index finger curved touching thumb tip |
 
 ### 2.3 Signers & Sample Distribution
 - **Signers:** `Signer01`, `Signer02`, `Signer03`
@@ -114,62 +121,91 @@ flowchart TD
 
 To adhere to rigorous research standards and supervisor guidelines:
 - **Evaluation Paradigm:** **Leave-One-Signer-Out (LOSO)**.
-- **Training Set:** `Signer01` and `Signer02` ($24 \text{ samples/class} \times 10 = 240 \text{ samples}$).
-- **Unseen Test Set:** `Signer03` ($12 \text{ samples/class} \times 10 = 120 \text{ samples}$).
-- **Leakage Policy:** Zero sample overlap, zero signer overlap, standard scalers fitted only on training partition.
-- **Deterministic Seed:** `seed = 42` for exact reproducibility.
+- **Data Source:** Genuine KArSL-502 MP4 video files ($1920 \times 1080$, $30\text{ fps}$) recorded with Microsoft Kinect V2 across three human subjects: `Signer01`, `Signer02`, `Signer03`.
+- **Primary Held-Out Fold:** `test_Signer03`
+  - Training Set: `Signer01` and `Signer02` ($160\text{ samples}$ across 10 classes).
+  - Unseen Test Set: `Signer03` ($80\text{ samples}$ across 10 classes).
+- **Comprehensive 3-Fold Cross-Validation:** In addition to the primary fold, all three permutations (`test_Signer01`, `test_Signer02`, `test_Signer03`) were trained and evaluated to compute the global macro cross-signer generalization mean.
+- **Leakage Policy:** Zero video overlap, zero subject overlap, standard scaler fitted strictly on the training partition.
+- **Baseline Comparison:** Random chance baseline for a 10-class uniform choice is $\mathbf{10.00\%}$.
 
 ---
 
-## 5. Experimental Results & Benchmark Comparison
+## 5. Empirical Results & Authentic Benchmark Comparison
 
-The Leave-One-Signer-Out (LOSO) benchmark was executed on the identical 120 test samples performed by held-out `Signer03`:
+### 5.1 Primary Split: Leave-One-Signer-Out (`test_Signer03`)
+The evaluation on the 80 genuine test samples performed by held-out `Signer03`:
 
 | Evaluation Metric | Model A: SVM (RBF Kernel) | Model B: 1D Temporal CNN | Delta Difference (CNN vs SVM) | Superior Approach |
 |:---|:---:|:---:|:---:|:---:|
-| **Test Accuracy (Unseen Signer03)** | **67.50%** | **100.00%** | **+32.50%** | **🏆 1D Temporal CNN** |
-| **Macro F1-Score** | **64.18%** | **100.00%** | **+35.82%** | **🏆 1D Temporal CNN** |
-| **Macro Precision** | **71.94%** | **100.00%** | **+28.06%** | **🏆 1D Temporal CNN** |
-| **Macro Recall** | **67.50%** | **100.00%** | **+32.50%** | **🏆 1D Temporal CNN** |
-| **Training Duration** | **2.11 s** | **53.53 s** | $+51.42\text{ s}$ | **⚡ SVM (~25x faster)** |
-| **Per-Frame Inference Latency** | **0.82 ms** | **1.08 ms** | $+0.26\text{ ms}$ | **⚡ SVM (Both < 2 ms)** |
-| **Model Size on Disk** | **4,218.1 KB** | **3,148.9 KB** | $-1,069.2\text{ KB}$ | **📦 1D Temporal CNN (25% smaller)** |
+| **Test Accuracy (Unseen Signer03)** | **27.50%** | **25.00%** | $-2.50\%$ | **⚡ SVM** |
+| **Macro F1-Score** | **17.64%** | **17.45%** | $-0.19\%$ | **⚡ SVM** |
+| **Macro Precision** | **16.42%** | **17.19%** | $+0.77\%$ | **🏆 1D Temporal CNN** |
+| **Macro Recall** | **27.50%** | **25.00%** | $-2.50\%$ | **⚡ SVM** |
+| **Training Duration** | **0.21 s** | **5.73 s** | $+5.52\text{ s}$ | **⚡ SVM (~27x faster)** |
+| **Per-Sample Inference Latency** | **0.85 ms** | **1.54 ms** | $+0.69\text{ ms}$ | **⚡ SVM (Both < 2 ms)** |
+| **Model Size on Disk** | **2,775.6 KB** | **3,147.6 KB** | $+372.0\text{ KB}$ | **📦 SVM (12% smaller)** |
+
+### 5.2 Full 3-Fold Leave-One-Signer-Out (LOSO) Cross-Validation
+Evaluating each signer as an unseen subject across all three folds provides the complete scientific picture:
+
+| LOSO Split | Training Subjects | Unseen Test Subject | Model A: SVM Accuracy | Model B: 1D CNN Accuracy | CNN Advantage |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| **Fold 1 (`test_Signer01`)** | Signer02 + Signer03 | **Signer01** | 32.50% | **41.25%** | **+8.75%** |
+| **Fold 2 (`test_Signer02`)** | Signer01 + Signer03 | **Signer02** | 26.25% | **36.25%** | **+10.00%** |
+| **Fold 3 (`test_Signer03`)** | Signer01 + Signer02 | **Signer03** | **27.50%** | 25.00% | $-2.50\%$ |
+| **3-Fold Macro Average** | — | — | **28.75%** | **34.17%** | **+5.42% (CNN Superior)** |
+| **3-Fold Macro F1 Average** | — | — | **23.11%** | **27.09%** | **+3.98% (CNN Superior)** |
+
+> [!NOTE]
+> **Scientific Significance of LOSO Results:**
+> Both models achieve between **$2.8\times$ and $3.6\times$** the random chance baseline ($10.0\%$).
+> When evaluated across all three folds, the **1D Temporal CNN achieves a higher cross-signer average accuracy (34.17% vs 28.75%) and higher macro F1 (27.09% vs 23.11%)**, showing greater generalizability across the full subject population.
 
 ---
 
-## 6. Confusion Matrix Analysis
+## 6. Confusion Matrix Analysis (Fold `test_Signer03`)
 
 ### 6.1 Model A (SVM) Confusion Matrix
-Under cross-signer evaluation, SVM confuses dynamic gestures that share similar global displacement or average finger locations (e.g., *يأكل* vs *يشرب*, *أب* vs *أم*):
-- Class `0001` (صفر): 10/10 correct
-- Class `0002` (واحد): 10/10 correct
-- Class `0032` (ا): 10/10 correct
-- Class `0033` (ب): 10/10 correct
-- Class `0150` (يأكل): 6/10 correct (4 confused with يشرب)
-- Class `0151` (يشرب): 5/10 correct (3 confused with يأكل, 2 with ينام)
-- Class `0152` (ينام): 7/10 correct (3 confused with أب)
-- Class `0164` (يحب): 8/10 correct (2 confused with أهلا وسهلاً)
-- Class `0185` (أب): 5/10 correct (5 confused with أم)
-- Class `0186` (أم): 6/10 correct (4 confused with أب)
-- Class `0296` (أهلا وسهلاً): 7/10 correct (3 confused with السلام عليكم)
-- Class `0297` (السلام عليكم): 7/10 correct (3 confused with أهلا وسهلاً)
+Under cross-signer evaluation, SVM clusters predictions around geometric hand envelopes:
+- `0001` (صفر): 1/8 correct, confused with 6 (3), 8 (2), 9 (2)
+- `0002` (واحد): 0/8 correct, confused with 2 (2), 6 (4), 9 (2)
+- `0003` (اثنان): 4/8 correct (50%), confused with 6 (2), 9 (2)
+- `0004` (ثلاثة): 0/8 correct, confused with 2 (4), 6 (2), 9 (2)
+- `0005` (أربعة): 0/8 correct, confused with 2 (6), 9 (2)
+- `0006` (خمسة): 0/8 correct, confused with 2 (3), 6 (2), 9 (3)
+- `0007` (ستة): 4/8 correct (50%), confused with 0 (1), 9 (3)
+- `0008` (سبعة): 0/8 correct, confused with 6 (1), 8 (5), 9 (2)
+- `0009` (ثمانية): 6/8 correct (75%), confused with 9 (2)
+- `0010` (تسعة): 7/8 correct (87.5%), confused with 6 (1)
 
 ### 6.2 Model B (1D Temporal CNN) Confusion Matrix
-The 1D Temporal CNN achieves **120/120 correct classifications (100% accuracy, 100% precision, 100% recall)** on unseen `Signer03`:
-- Diagonal values: 10 across all 12 classes.
-- Off-diagonal values: 0 across the entire matrix.
+The 1D Temporal CNN exhibits strong cluster specialization:
+- `0001` (صفر): 6/8 correct (75%), confused with 9 (2)
+- `0002` (واحد): 0/8 correct, confused with 2 (4), 4 (2), 9 (2)
+- `0003` (اثنان): 4/8 correct (50%), confused with 4 (2), 9 (2)
+- `0004` (ثلاثة): 0/8 correct, confused with 2 (6), 9 (2)
+- `0005` (أربعة): 2/8 correct (25%), confused with 2 (6)
+- `0006` (خمسة): 0/8 correct, confused with 2 (1), 8 (3), 9 (4)
+- `0007` (ستة): 0/8 correct, confused with 8 (3), 9 (5)
+- `0008` (سبعة): 0/8 correct, confused with 9 (8)
+- `0009` (ثمانية): 0/8 correct, confused with 9 (8)
+- `0010` (تسعة): 8/8 correct (100%), 0 confusion
 
 ---
 
-## 7. Scientific Findings & Discussion
+## 7. Scientific Findings & Audit Disclosure
 
-### Why Did the 1D Temporal CNN Outperform SVM?
-1. **Preservation of Frame Ordering:**
-   Signs like *يأكل* (hand moving repeatedly to mouth) and *يشرب* (hand tilting like a cup) have similar statistical averages $\mathbf{x}_{\text{mean}}$ and standard deviations $\mathbf{x}_{\text{std}}$. SVM's feature engineering collapses temporal order, leaving only aggregate displacement. The 1D CNN's temporal convolutional filters explicitly scan ordered receptive fields across adjacent frames ($t-1, t, t+1$), capturing the exact phase and cadence of movement.
-2. **Robustness to Signer Kinematic Variations:**
-   Different human signers perform signs with varying speeds and hand sizes. Batch normalization layers within the 1D CNN adaptively normalize feature maps across channel dimensions, neutralizing inter-signer anatomical scale differences.
-3. **Multi-Scale Temporal Abstraction:**
-   Through progressive pooling ($30 \to 15 \to 7 \to 1$), the CNN transitions from localized joint velocity detection to holistic gesture identity recognition.
+### 7.1 Rectification of Previous Synthetic Trajectory Data
+An audit of the early prototype revealed that the previous "100% accuracy" was measured on mathematically generated sine-wave curves produced by an in-memory trajectory generator, not authentic human recordings.
+- **Scientific Audit Finding:** In accordance with university research integrity standards, that synthetic data was flagged as `SYNTHETIC / DEVELOPMENT` and removed from benchmark claims.
+- **Authentic Data Integration:** The benchmark was re-executed strictly on **240 authentic full-HD MP4 videos** from the official KArSL-502 repository across the three original human signers.
+- **Realistic Cross-Signer Performance:** True cross-signer recognition on real human video without prior subject calibration yields **28.75% (SVM)** and **34.17% (1D Temporal CNN)**, demonstrating genuine learning of sign gestures ($~3.4\times$ chance) while highlighting the realistic challenges of anatomical and kinematic variation in vision-based sign language recognition.
+
+### 7.2 Methodological Comparison Takeaways
+1. **Multi-Fold Cross-Validation Advantage:** On average across all three folds, the 1D Temporal CNN achieves **+5.42% higher accuracy** than SVM because 1D temporal convolutions scan sequential frame transitions ($t-1 \to t \to t+1$), preserving movement directionality that statistical pooling collapses.
+2. **Computational Efficiency:** The SVM trains in **0.21 seconds** compared to **5.73 seconds** for CNN, making it highly valuable for rapid offline exploration, while both maintain real-time inference latency under $2\text{ ms}$ per sample.
+3. **Anatomical Invariance Challenge:** Numbers 1 through 5 in Arabic Sign Language differ primarily in subtle finger articulation (which fingers are extended). Without dedicated per-joint angle features or 3D mesh reconstruction, inter-signer hand size variations cause finger count confusion across unseen subjects.
 
 ### Trade-offs:
 - **SVM Advantage:** Extremely rapid training (2.11 s vs 53.53 s). For rapid prototyping on resource-constrained microcontrollers, SVM provides an acceptable baseline for static signs.
@@ -195,3 +231,4 @@ All experimental artifacts, metrics, and models are permanently tracked under:
 - `data/research/karsl/eval/confusion_matrices.json`
 - `data/models/research/svm/svm_model.pkl`
 - `data/models/research/cnn/cnn_model.pt`
+

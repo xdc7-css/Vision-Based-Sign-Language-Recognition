@@ -80,8 +80,8 @@ class ResearchScientificEvaluator:
         X_train, y_train = X_all[train_idx], y_all[train_idx]
         X_test, y_test = X_all[test_idx], y_all[test_idx]
 
-        test_signer = fold_info["test_signer"]
-        train_signers = fold_info["train_signers"]
+        test_signer = fold_info.get("test_signer", fold_info.get("held_out_signer", "Unknown"))
+        train_signers = fold_info.get("train_signers", [])
         logger.info(
             f"LOSO Protocol: Train signers={train_signers} ({len(X_train)} samples), "
             f"Test signer={test_signer} ({len(X_test)} samples)."
@@ -173,6 +173,7 @@ class ResearchScientificEvaluator:
 
         total_elapsed = time.perf_counter() - t_global_start
 
+        ds_status = self.dm.get_status()
         comparison_payload = {
             "timestamp": time.time(),
             "protocol": "Leave-One-Signer-Out (LOSO)",
@@ -183,6 +184,9 @@ class ResearchScientificEvaluator:
             "test_samples": len(X_test),
             "num_classes": len(self.classes),
             "classes": [c["name_ar"] for c in self.classes],
+            "is_authentic": ds_status.get("is_authentic", True),
+            "data_source": ds_status.get("data_source", "karsl_502_authentic_video"),
+            "provenance": ds_status.get("provenance", "KArSL-502 Official Dataset"),
             "svm": svm_results,
             "cnn": cnn_results,
             "winner": winner,

@@ -14,73 +14,59 @@
     "category": "number"
   },
   {
-    "sign_id": "0032",
-    "index": 31,
-    "name_ar": "ا",
-    "name_en": "Alif",
-    "category": "alphabet"
+    "sign_id": "0003",
+    "index": 2,
+    "name_ar": "اثنان",
+    "name_en": "2",
+    "category": "number"
   },
   {
-    "sign_id": "0033",
-    "index": 32,
-    "name_ar": "ب",
-    "name_en": "Baa",
-    "category": "alphabet"
+    "sign_id": "0004",
+    "index": 3,
+    "name_ar": "ثلاثة",
+    "name_en": "3",
+    "category": "number"
   },
   {
-    "sign_id": "0150",
-    "index": 149,
-    "name_ar": "يأكل",
-    "name_en": "eat",
-    "category": "verb"
+    "sign_id": "0005",
+    "index": 4,
+    "name_ar": "أربعة",
+    "name_en": "4",
+    "category": "number"
   },
   {
-    "sign_id": "0151",
-    "index": 150,
-    "name_ar": "يشرب",
-    "name_en": "drink",
-    "category": "verb"
+    "sign_id": "0006",
+    "index": 5,
+    "name_ar": "خمسة",
+    "name_en": "5",
+    "category": "number"
   },
   {
-    "sign_id": "0152",
-    "index": 151,
-    "name_ar": "ينام",
-    "name_en": "sleep",
-    "category": "verb"
+    "sign_id": "0007",
+    "index": 6,
+    "name_ar": "ستة",
+    "name_en": "6",
+    "category": "number"
   },
   {
-    "sign_id": "0164",
-    "index": 163,
-    "name_ar": "يحب",
-    "name_en": "love",
-    "category": "verb"
+    "sign_id": "0008",
+    "index": 7,
+    "name_ar": "سبعة",
+    "name_en": "7",
+    "category": "number"
   },
   {
-    "sign_id": "0185",
-    "index": 184,
-    "name_ar": "أب",
-    "name_en": "father",
-    "category": "family"
+    "sign_id": "0009",
+    "index": 8,
+    "name_ar": "ثمانية",
+    "name_en": "8",
+    "category": "number"
   },
   {
-    "sign_id": "0186",
-    "index": 185,
-    "name_ar": "أم",
-    "name_en": "mother",
-    "category": "family"
-  },
-  {
-    "sign_id": "0296",
-    "index": 295,
-    "name_ar": "أهلا وسهلاً",
-    "name_en": "welcome",
-    "category": "greeting"
-  },
-  {
-    "sign_id": "0297",
-    "index": 296,
-    "name_ar": "السلام عليكم",
-    "name_en": "greeting",
-    "category": "greeting"
+    "sign_id": "0010",
+    "index": 9,
+    "name_ar": "تسعة",
+    "name_en": "9",
+    "category": "number"
   }
 ]

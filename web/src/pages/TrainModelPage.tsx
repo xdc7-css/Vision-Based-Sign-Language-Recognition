@@ -561,6 +561,17 @@ export const TrainModelPage: React.FC<TrainModelPageProps> = ({
                 <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#38BDF8]/20 text-[#38BDF8] border border-[#38BDF8]/30">
                   SVM vs 1D Temporal CNN
                 </span>
+                {researchStatus?.dataset?.is_authentic ? (
+                  <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/30 flex items-center space-x-1">
+                    <span>●</span>
+                    <span>Authentic KArSL Dataset</span>
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#F59E0B]/20 text-[#F59E0B] border border-[#F59E0B]/30 flex items-center space-x-1">
+                    <span>⚠️</span>
+                    <span>Development Model — Pending Validation</span>
+                  </span>
+                )}
               </div>
               <p className="text-xs text-[#94A3B8] mt-0.5">
                 Supervisor: <span className="text-[#F3F4F6] font-semibold">Dr. Hiba Hakim Abdulzahra</span> • Dept. of Computer Engineering, University of Basrah
@@ -589,7 +600,7 @@ export const TrainModelPage: React.FC<TrainModelPageProps> = ({
               {researchStatus?.dataset?.is_prepared ? `${researchStatus.dataset.total_samples} Samples` : 'Not Prepared'}
             </div>
             <div className="text-[11px] text-[#64748B]">
-              12 Signs • Signers 01, 02, 03
+              {researchStatus?.dataset?.num_classes || 10} Signs • Signers 01, 02, 03
             </div>
           </div>
 
@@ -839,10 +850,18 @@ export const TrainModelPage: React.FC<TrainModelPageProps> = ({
               </div>
               <div className="text-xs space-y-1">
                 <div className="text-sm font-bold text-[#10B981] flex items-center space-x-2">
-                  <span>Declared Scientific Winner: Model B (1D Temporal CNN)</span>
+                  <span>Declared Scientific Winner: {comparisonMetrics.winner?.best_model || 'Model B (1D Temporal CNN)'}</span>
                 </div>
                 <p className="text-[#94A3B8] leading-relaxed">
-                  Under strict Leave-One-Signer-Out (LOSO) testing on unseen Signer03, the 1D Temporal CNN achieves <strong>100.00% accuracy</strong> and <strong>100.00% F1-score</strong> (+35.82% advantage over SVM). Temporal 1D convolutions effectively extract trajectory dynamics across consecutive frames, whereas static statistical aggregation (mean/std/velocity) loses critical temporal ordering between distinct signs.
+                  {comparisonMetrics.winner?.rationale ? (
+                    comparisonMetrics.winner.rationale
+                  ) : (
+                    <>
+                      Under strict Leave-One-Signer-Out (LOSO) testing on unseen Signer03, Model B achieves{' '}
+                      <strong>{(comparisonMetrics.cnn.accuracy * 100).toFixed(2)}% accuracy</strong> and{' '}
+                      <strong>{(comparisonMetrics.cnn.f1_macro * 100).toFixed(2)}% F1-score</strong>. Temporal 1D convolutions effectively extract trajectory dynamics across consecutive frames, whereas static statistical aggregation (mean/std/velocity) loses critical temporal ordering between distinct signs.
+                    </>
+                  )}
                 </p>
               </div>
             </div>

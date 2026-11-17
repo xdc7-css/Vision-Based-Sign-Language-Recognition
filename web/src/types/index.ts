@@ -136,6 +136,9 @@ export interface RecognitionStreamResult {
 
 export interface ResearchDatasetStatus {
   is_prepared: boolean;
+  is_authentic?: boolean;
+  data_source?: string;
+  provenance?: string;
   total_samples: number;
   num_classes: number;
   classes: string[];

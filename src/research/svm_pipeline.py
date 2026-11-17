@@ -82,6 +82,7 @@ class ResearchSVMPipeline:
         """Train SVM on engineered features with execution profiling."""
         logger.info(f"Training Research SVM (kernel={kernel}, C={C}, samples={len(X_train_seq)})...")
         t0 = time.perf_counter()
+        self.classes = SELECTED_RESEARCH_CLASSES
 
         if progress_callback:
             progress_callback(1, 3, "استخراج المميزات وتوحيد القياس (StandardScaler)...")

@@ -150,6 +150,7 @@ class ResearchCNNPipeline:
         # Fix seeds for reproducibility
         torch.manual_seed(42)
         np.random.seed(42)
+        self.classes = SELECTED_RESEARCH_CLASSES
 
         # 1. Transform to (N, C=736, T=30)
         X_train_tensor = torch.tensor(self.extractor.prepare_cnn_dataset(X_train_seq), dtype=torch.float32)

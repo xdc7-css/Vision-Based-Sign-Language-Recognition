@@ -2,19 +2,19 @@
   "algorithm": "1D Temporal Convolutional Neural Network (Conv1D)",
   "framework": "PyTorch",
   "device": "cpu",
-  "num_classes": 12,
-  "timestamp": 1794909321.4455316,
-  "model_size_kb": 3148.9,
+  "num_classes": 10,
+  "timestamp": 1794913169.2477899,
+  "model_size_kb": 3147.6,
   "metrics": {
     "model_type": "cnn_1d_temporal",
-    "epochs_run": 15,
-    "train_samples": 240,
-    "train_time_sec": 53.527,
-    "inference_latency_ms": 1.08,
-    "train_accuracy": 1.0,
-    "val_accuracy": 1.0,
-    "val_precision_macro": 1.0,
-    "val_recall_macro": 1.0,
-    "val_f1_macro": 1.0
+    "epochs_run": 13,
+    "train_samples": 160,
+    "train_time_sec": 3.745,
+    "inference_latency_ms": 1.14,
+    "train_accuracy": 0.5125,
+    "val_accuracy": 0.25,
+    "val_precision_macro": 0.1719,
+    "val_recall_macro": 0.25,
+    "val_f1_macro": 0.1745
   }
 }

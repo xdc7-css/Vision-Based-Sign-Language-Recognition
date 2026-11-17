@@ -21,20 +21,18 @@ import numpy as np
 
 logger = logging.getLogger("arsl.research.dataset")
 
-# Standard 12 representative research sign classes from KArSL-502
+# Authentic 10 research sign classes from KArSL-502 (Numbers 0-9)
 SELECTED_RESEARCH_CLASSES: list[dict[str, Any]] = [
     {"sign_id": "0001", "index": 0, "name_ar": "صفر", "name_en": "0", "category": "number"},
     {"sign_id": "0002", "index": 1, "name_ar": "واحد", "name_en": "1", "category": "number"},
-    {"sign_id": "0032", "index": 31, "name_ar": "ا", "name_en": "Alif", "category": "alphabet"},
-    {"sign_id": "0033", "index": 32, "name_ar": "ب", "name_en": "Baa", "category": "alphabet"},
-    {"sign_id": "0150", "index": 149, "name_ar": "يأكل", "name_en": "eat", "category": "verb"},
-    {"sign_id": "0151", "index": 150, "name_ar": "يشرب", "name_en": "drink", "category": "verb"},
-    {"sign_id": "0152", "index": 151, "name_ar": "ينام", "name_en": "sleep", "category": "verb"},
-    {"sign_id": "0164", "index": 163, "name_ar": "يحب", "name_en": "love", "category": "verb"},
-    {"sign_id": "0185", "index": 184, "name_ar": "أب", "name_en": "father", "category": "family"},
-    {"sign_id": "0186", "index": 185, "name_ar": "أم", "name_en": "mother", "category": "family"},
-    {"sign_id": "0296", "index": 295, "name_ar": "أهلا وسهلاً", "name_en": "welcome", "category": "greeting"},
-    {"sign_id": "0297", "index": 296, "name_ar": "السلام عليكم", "name_en": "greeting", "category": "greeting"},
+    {"sign_id": "0003", "index": 2, "name_ar": "اثنان", "name_en": "2", "category": "number"},
+    {"sign_id": "0004", "index": 3, "name_ar": "ثلاثة", "name_en": "3", "category": "number"},
+    {"sign_id": "0005", "index": 4, "name_ar": "أربعة", "name_en": "4", "category": "number"},
+    {"sign_id": "0006", "index": 5, "name_ar": "خمسة", "name_en": "5", "category": "number"},
+    {"sign_id": "0007", "index": 6, "name_ar": "ستة", "name_en": "6", "category": "number"},
+    {"sign_id": "0008", "index": 7, "name_ar": "سبعة", "name_en": "7", "category": "number"},
+    {"sign_id": "0009", "index": 8, "name_ar": "ثمانية", "name_en": "8", "category": "number"},
+    {"sign_id": "0010", "index": 9, "name_ar": "تسعة", "name_en": "9", "category": "number"},
 ]
 
 SIGNERS: list[str] = ["Signer01", "Signer02", "Signer03"]
@@ -87,7 +85,7 @@ class KArSLDatasetManager:
         return [c["name_en"] for c in self.classes]
 
     def get_status(self) -> dict[str, Any]:
-        """Return dataset readiness and counts."""
+        """Return dataset readiness, provenance, and counts."""
         features_file = self.feat_dir / "karsl_features.npz"
         manifest_file = self.meta_dir / "dataset_manifest.json"
         splits_file = self.splits_dir / "loso_splits.json"
@@ -96,6 +94,8 @@ class KArSLDatasetManager:
         sample_count = 0
         signer_counts = {s: 0 for s in SIGNERS}
         class_counts: dict[str, int] = {}
+        data_source = "unknown"
+        is_authentic = False
 
         if is_prepared:
             try:
@@ -108,6 +108,8 @@ class KArSLDatasetManager:
                         signer_counts[s_id] += 1
                     c_name = item.get("sign_name_ar", "Unknown")
                     class_counts[c_name] = class_counts.get(c_name, 0) + 1
+                    data_source = item.get("data_source", data_source)
+                is_authentic = (data_source == "karsl_502_authentic_video")
             except Exception as e:
                 logger.warning(f"Error reading manifest: {e}")
 
@@ -115,6 +117,13 @@ class KArSLDatasetManager:
 
         return {
             "is_prepared": is_prepared,
+            "is_authentic": is_authentic,
+            "data_source": data_source,
+            "provenance": (
+                "KArSL-502 Official Dataset (Sidig et al., ACM IMWUT 2021)"
+                if is_authentic
+                else "SYNTHETIC / DEVELOPMENT (Artificially Generated)"
+            ),
             "total_samples": sample_count,
             "num_classes": len(self.classes),
             "classes": [c["name_ar"] for c in self.classes],
@@ -134,7 +143,7 @@ class KArSLDatasetManager:
         force_rebuild: bool = False,
         random_seed: int = 42,
     ) -> dict[str, Any]:
-        """Prepare research dataset with consistent feature extraction across 3 signers."""
+        """Prepare research dataset from authentic raw videos if present, else fallback."""
         features_file = self.feat_dir / "karsl_features.npz"
         manifest_file = self.meta_dir / "dataset_manifest.json"
 
@@ -142,8 +151,32 @@ class KArSLDatasetManager:
             logger.info("Research dataset already prepared. Returning cached status.")
             return self.get_status()
 
+        # If authentic videos are present, extract from them
+        raw_manifest_csv = self.base_dir / "manifests" / "real_10_signs.csv"
+        raw_videos = list(self.raw_dir.glob("**/*.mp4"))
+        if raw_manifest_csv.exists() and len(raw_videos) >= 20:
+            logger.info(f"Extracting features from {len(raw_videos)} authentic KArSL videos...")
+            from src.research.extract_real_karsl_features import main as extract_main
+            extract_main()
+            return self.get_status()
+
+        logger.warning("No authentic raw videos found. Preparing synthetic development dataset...")
+        return self.prepare_synthetic_development_dataset(
+            samples_per_sign_per_signer=samples_per_sign_per_signer,
+            random_seed=random_seed,
+        )
+
+    def prepare_synthetic_development_dataset(
+        self,
+        samples_per_sign_per_signer: int = 15,
+        random_seed: int = 42,
+    ) -> dict[str, Any]:
+        """Development fallback only: generates synthetic kinematic trajectories."""
+        features_file = self.feat_dir / "karsl_features.npz"
+        manifest_file = self.meta_dir / "dataset_manifest.json"
+
         logger.info(
-            f"Generating multi-signer research dataset: {len(self.classes)} signs x "
+            f"Generating multi-signer synthetic development dataset: {len(self.classes)} signs x "
             f"{len(SIGNERS)} signers x {samples_per_sign_per_signer} repetitions."
         )
 
@@ -155,28 +188,25 @@ class KArSLDatasetManager:
         manifest_records: list[dict[str, Any]] = []
 
         total_samples = len(self.classes) * len(SIGNERS) * samples_per_sign_per_signer
-        logger.info(f"Preparing {total_samples} temporal kinematic feature sequences...")
+        logger.info(f"Preparing {total_samples} synthetic temporal feature sequences...")
 
         for class_idx, class_info in enumerate(self.classes):
             sign_id = class_info["sign_id"]
             name_ar = class_info["name_ar"]
             name_en = class_info["name_en"]
 
-            # Distinct base motion archetype per sign class
             base_phase = (class_idx * 2 * np.pi) / len(self.classes)
             base_freq = 0.8 + 0.15 * (class_idx % 4)
 
             for signer_idx, signer_id in enumerate(SIGNERS):
-                # Signer-specific anatomical bias (arm span, height variation, execution tempo)
                 signer_scale = 0.92 + 0.08 * signer_idx
                 signer_tempo = 0.95 + 0.05 * (signer_idx - 1)
                 signer_offset = np.array([0.02 * (signer_idx - 1), 0.01 * signer_idx, 0.0])
 
                 for rep in range(samples_per_sign_per_signer):
-                    sample_id = f"karsl_{sign_id}_{signer_id}_rep{rep:02d}"
+                    sample_id = f"karsl_synth_{sign_id}_{signer_id}_rep{rep:02d}"
 
-                    # Construct 30-frame temporal landmark trajectory
-                    seq = self._generate_kinematic_trajectory(
+                    seq = self._generate_synthetic_dev_trajectory(
                         seq_len=SEQ_LEN,
                         feat_dim=FEAT_DIM,
                         class_idx=class_idx,
@@ -203,15 +233,14 @@ class KArSLDatasetManager:
                                 repetition=rep,
                                 num_frames=SEQ_LEN,
                                 feature_dim=FEAT_DIM,
-                                data_source="karsl_502_subset",
+                                data_source="karsl_502_synthetic_dev",
                             )
                         )
                     )
 
-        # Save feature tensors
-        X_arr = np.array(all_sequences, dtype=np.float32)  # Shape: (N, 30, 736)
-        y_arr = np.array(all_labels, dtype=np.int64)        # Shape: (N,)
-        s_arr = np.array(all_signers, dtype=object)         # Shape: (N,)
+        X_arr = np.array(all_sequences, dtype=np.float32)
+        y_arr = np.array(all_labels, dtype=np.int64)
+        s_arr = np.array(all_signers, dtype=object)
 
         np.savez_compressed(
             features_file,
@@ -223,13 +252,10 @@ class KArSLDatasetManager:
         with open(manifest_file, "w", encoding="utf-8") as f:
             json.dump(manifest_records, f, ensure_ascii=False, indent=2)
 
-        # Generate Leave-One-Signer-Out splits
         self._generate_splits(manifest_records)
-
-        logger.info(f"Research dataset saved successfully: {X_arr.shape} samples.")
         return self.get_status()
 
-    def _generate_kinematic_trajectory(
+    def _generate_synthetic_dev_trajectory(
         self,
         seq_len: int,
         feat_dim: int,

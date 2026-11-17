@@ -490,10 +490,9 @@ class ModelTrainingTab(QWidget):
 
         # Metrics Summary Table / Text
         self._research_results_label = QLabel(
-            "Evaluation Protocol: Train on Signer01 + Signer02 (240 samples) → Test on unseen Signer03 (120 samples).\n"
-            "• SVM (RBF): Accuracy 67.50% | Macro F1 64.18% | Train Time 2.11s | Latency 0.82 ms\n"
-            "• 1D CNN (Temporal): Accuracy 100.00% | Macro F1 100.00% | Train Time 53.53s | Latency 1.08 ms\n"
-            "🏆 Scientific Winner: 1D Temporal CNN (+35.8% F1 advantage due to continuous trajectory modeling over frame sequence)."
+            "Evaluation Protocol: Train on Signer01 + Signer02 → Test on unseen Signer03 (LOSO).\n"
+            "Dataset: Authentic KArSL-502 (Sidig et al., ACM IMWUT 2021) — 10 signs (0-9) across 3 signers (240 videos).\n"
+            "Click '4. Run LOSO Comparison' to evaluate SVM and 1D Temporal CNN on authentic benchmark data."
         )
         self._research_results_label.setStyleSheet("color: #F3F4F6; font-size: 12px; background: #101419; border: 1px solid #2B3442; border-radius: 6px; padding: 10px; line-height: 1.5;")
         self._research_results_label.setWordWrap(True)
@@ -525,8 +524,16 @@ class ModelTrainingTab(QWidget):
         try:
             from src.research.karsl_dataset import KArSLDatasetManager
             dm = KArSLDatasetManager()
-            dm.prepare_dataset(samples_per_sign_per_signer=15)
-            QMessageBox.information(self, "KArSL Dataset", "KArSL-502 research subset prepared successfully (360 samples across 12 classes).")
+            status = dm.prepare_dataset()
+            provenance = status.get("provenance", "KArSL-502")
+            total = status.get("total_samples", 0)
+            n_classes = status.get("num_classes", 10)
+            QMessageBox.information(
+                self,
+                "KArSL Dataset",
+                f"KArSL-502 research subset prepared successfully ({total} samples across {n_classes} classes).\n"
+                f"Provenance: {provenance}"
+            )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to prepare dataset: {e}")
 
