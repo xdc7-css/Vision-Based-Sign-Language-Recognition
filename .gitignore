@@ -56,3 +56,10 @@ data/research/karsl/raw/
 *.avi
 *.mov
 *.mkv
+
+# Independent Human Evaluation (Volunteer Privacy Protection)
+data/research/independent_evaluation/recordings/*
+!data/research/independent_evaluation/recordings/.gitkeep
+data/research/independent_evaluation/consent/
+data/research/independent_evaluation/volunteers_private.json
+data/captures/

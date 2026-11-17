@@ -305,6 +305,23 @@ export interface IndependentEvalStatus {
   evaluation_date?: number;
 }
 
+export interface SignReferenceInfo {
+  sign_id: string;
+  class_idx: number;
+  name_ar: string;
+  name_en: string;
+  tip_ar: string;
+  tip_en: string;
+  target_reps: number;
+}
+
+export interface ConsentNotice {
+  title_ar: string;
+  title_en: string;
+  body_ar: string;
+  body_en: string;
+}
+
 export interface AvailableModel {
   id: string;
   name: string;

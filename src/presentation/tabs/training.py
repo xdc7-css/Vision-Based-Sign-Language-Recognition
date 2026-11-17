@@ -581,6 +581,11 @@ class ModelTrainingTab(QWidget):
         self._reg_vol_btn.clicked.connect(self._on_register_volunteer_clicked)
         ctrl_row.addWidget(self._reg_vol_btn)
 
+        self._open_rec_btn = QPushButton("📹  Record Volunteer Signs")
+        self._open_rec_btn.setStyleSheet("background-color: #7C3AED; color: #FFFFFF; font-weight: 700;")
+        self._open_rec_btn.clicked.connect(self._on_open_recording_studio)
+        ctrl_row.addWidget(self._open_rec_btn)
+
         self._run_ind_eval_btn = QPushButton("🚀  Run Frozen Evaluation")
         self._run_ind_eval_btn.setObjectName("actionButton")
         self._run_ind_eval_btn.clicked.connect(self._on_run_independent_eval_clicked)
@@ -657,6 +662,33 @@ class ModelTrainingTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to register volunteer: {e}")
 
+    def _on_open_recording_studio(self) -> None:
+        try:
+            from src.presentation.dialogs.volunteer_recording_dialog import VolunteerRecordingDialog
+            from src.research.independent_evaluation import IndependentEvaluationManager
+            mgr = IndependentEvaluationManager()
+            vols = mgr.list_volunteers()
+            if not vols:
+                name, ok = QInputDialog.getText(
+                    self,
+                    "Register Volunteer",
+                    "Enter volunteer name/alias (or leave blank for 'Volunteer 01'):",
+                )
+                if not ok:
+                    return
+                v = mgr.register_volunteer(name=name.strip())
+                active_vol_id = v["volunteer_id"]
+            else:
+                active_vol_id = self._vol_combo.currentData() or vols[0]["volunteer_id"]
+
+            dlg = VolunteerRecordingDialog(manager=mgr, initial_volunteer_id=active_vol_id, parent=self)
+            dlg.recording_saved.connect(lambda _: self._refresh_independent_eval_ui())
+            dlg.exec()
+            self._refresh_independent_eval_ui()
+        except Exception as e:
+            QMessageBox.critical(self, "Recording Studio Error", f"Failed to open recording studio: {e}")
+
+
     def _on_run_independent_eval_clicked(self) -> None:
         try:
             from src.research.independent_evaluation import IndependentEvaluationManager
@@ -709,16 +741,25 @@ class ModelTrainingTab(QWidget):
             from src.research.karsl_dataset import KArSLDatasetManager
             from src.research.svm_pipeline import ResearchSVMPipeline
             dm = KArSLDatasetManager()
-            X_all, y_all, _ = dm.load_features()
-            splits = dm.load_loso_splits()["test_Signer03"]
-            svm_pipe = ResearchSVMPipeline()
+            # Strictly use inner train/val split from training signers only (Signer01 + Signer02)
+            # The held-out test signer (Signer03) is completely untouched.
+            split = dm.get_inner_train_val_split(loso_fold="test_Signer03")
+            manual_svm_dir = "data/models/research/manual_training/svm"
+            svm_pipe = ResearchSVMPipeline(output_dir=manual_svm_dir, feature_schema="hands_only")
             res = svm_pipe.train(
-                X_train_seq=X_all[splits["train_indices"]],
-                y_train=y_all[splits["train_indices"]],
-                X_val_seq=X_all[splits["test_indices"]],
-                y_val=y_all[splits["test_indices"]],
+                X_train_seq=split["X_inner_train"],
+                y_train=split["y_inner_train"],
+                X_val_seq=split["X_inner_val"],
+                y_val=split["y_inner_val"],
             )
-            QMessageBox.information(self, "SVM Trained", f"Model A (SVM) trained successfully!\nValidation Accuracy: {res['val_accuracy']*100:.1f}%\nF1-score: {res['val_macro_f1']*100:.1f}%")
+            QMessageBox.information(
+                self,
+                "SVM Trained (Zero Test Leakage)",
+                f"Model A (SVM) trained successfully on Signer01 + Signer02!\n"
+                f"Validation Protocol: Inner-Validation (Held-out Signer03 strictly untouched)\n"
+                f"Validation Accuracy: {res['val_accuracy']*100:.1f}%\n"
+                f"Validation F1-score: {res['val_macro_f1']*100:.1f}%"
+            )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to train SVM: {e}")
 
@@ -727,17 +768,28 @@ class ModelTrainingTab(QWidget):
             from src.research.karsl_dataset import KArSLDatasetManager
             from src.research.cnn_pipeline import ResearchCNNPipeline
             dm = KArSLDatasetManager()
-            X_all, y_all, _ = dm.load_features()
-            splits = dm.load_loso_splits()["test_Signer03"]
-            cnn_pipe = ResearchCNNPipeline()
+            # Strictly use inner train/val split from training signers only (Signer01 + Signer02)
+            # The held-out test signer (Signer03) is completely untouched.
+            split = dm.get_inner_train_val_split(loso_fold="test_Signer03")
+            manual_cnn_dir = "data/models/research/manual_training/cnn"
+            cnn_pipe = ResearchCNNPipeline(output_dir=manual_cnn_dir, feature_schema="hands_only")
             res = cnn_pipe.train(
-                X_train_seq=X_all[splits["train_indices"]],
-                y_train=y_all[splits["train_indices"]],
-                X_val_seq=X_all[splits["test_indices"]],
-                y_val=y_all[splits["test_indices"]],
+                X_train_seq=split["X_inner_train"],
+                y_train=split["y_inner_train"],
+                X_val_seq=split["X_inner_val"],
+                y_val=split["y_inner_val"],
                 epochs=35,
             )
-            QMessageBox.information(self, "CNN Trained", f"Model B (1D CNN) trained successfully!\nValidation Accuracy: {res['val_accuracy']*100:.1f}%\nF1-score: {res['val_macro_f1']*100:.1f}%")
+            QMessageBox.information(
+                self,
+                "CNN Trained (Zero Test Leakage)",
+                f"Model B (1D CNN) trained successfully on Signer01 + Signer02!\n"
+                f"Validation Protocol: Inner-Validation (Held-out Signer03 strictly untouched)\n"
+                f"Validation Accuracy: {res['val_accuracy']*100:.1f}%\n"
+                f"Validation F1-score: {res['val_macro_f1']*100:.1f}%"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to train CNN: {e}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to train CNN: {e}")
 

@@ -19,7 +19,11 @@ import {
   Users,
   UserPlus,
   ShieldAlert,
+  ShieldCheck,
   Video,
+  Camera,
+  RotateCcw,
+  Trash2,
   Info,
 } from 'lucide-react';
 import {
@@ -38,6 +42,11 @@ import {
   registerIndependentVolunteer,
   fetchVolunteerProgress,
   runIndependentEvaluation,
+  fetchConsentNotice,
+  fetchSignReferences,
+  fetchNextRepIndex,
+  deleteIndependentVolunteer,
+  uploadIndependentRecording,
 } from '../services/api';
 import type {
   TrainingJobStatus,
@@ -47,6 +56,8 @@ import type {
   IndependentEvalStatus,
   VolunteerInfo,
   VolunteerProgress,
+  SignReferenceInfo,
+  ConsentNotice,
 } from '../types';
 
 interface TrainModelPageProps {
@@ -90,6 +101,26 @@ export const TrainModelPage: React.FC<TrainModelPageProps> = ({
   const [indEvalActionText, setIndEvalActionText] = useState<string>('');
   const [showSampleBreakdown, setShowSampleBreakdown] = useState<boolean>(false);
   const [selectedIndConfusionModel, setSelectedIndConfusionModel] = useState<'svm' | 'cnn' | null>(null);
+
+  // Web Recording Studio State
+  const [showRecordingStudio, setShowRecordingStudio] = useState<boolean>(false);
+  const [signReferences, setSignReferences] = useState<SignReferenceInfo[]>([]);
+  const [selectedRecordSign, setSelectedRecordSign] = useState<string>('0001');
+  const [availableVideoDevices, setAvailableVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [isWebcamRecording, setIsWebcamRecording] = useState<boolean>(false);
+  const [recordedVideoBlob, setRecordedVideoBlob] = useState<Blob | null>(null);
+  const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState<number>(0);
+  const [isUploadingRecording, setIsUploadingRecording] = useState<boolean>(false);
+  const [consentModalOpen, setConsentModalOpen] = useState<boolean>(false);
+  const [consentData, setConsentData] = useState<ConsentNotice | null>(null);
+
+  const webVideoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const durationTimerRef = useRef<number | null>(null);
 
   // Load readiness
   const loadReadiness = async () => {
@@ -135,6 +166,12 @@ export const TrainModelPage: React.FC<TrainModelPageProps> = ({
     loadReadiness();
     loadResearch();
     loadIndEval();
+    fetchSignReferences()
+      .then(setSignReferences)
+      .catch((err) => console.error('Failed to load signs:', err));
+    fetchConsentNotice()
+      .then(setConsentData)
+      .catch((err) => console.error('Failed to load consent notice:', err));
   }, []);
 
   useEffect(() => {
@@ -146,6 +183,163 @@ export const TrainModelPage: React.FC<TrainModelPageProps> = ({
       setVolunteerProgress(null);
     }
   }, [selectedVolunteer]);
+
+  // Webcam Management for Volunteer Studio
+  const startWebcamStream = async (deviceId?: string) => {
+    try {
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      const constraints: MediaStreamConstraints = {
+        video: deviceId ? { deviceId: { exact: deviceId }, width: 640, height: 480 } : { width: 640, height: 480 },
+        audio: false,
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      mediaStreamRef.current = stream;
+      if (webVideoRef.current) {
+        webVideoRef.current.srcObject = stream;
+      }
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevs = devices.filter((d) => d.kind === 'videoinput');
+      setAvailableVideoDevices(videoDevs);
+      if (!selectedDeviceId && videoDevs.length > 0) {
+        setSelectedDeviceId(videoDevs[0].deviceId);
+      }
+    } catch (err) {
+      console.error('Failed to start webcam:', err);
+    }
+  };
+
+  const stopWebcamStream = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (webVideoRef.current) {
+      webVideoRef.current.srcObject = null;
+    }
+  };
+
+  useEffect(() => {
+    if (showRecordingStudio) {
+      startWebcamStream(selectedDeviceId);
+    } else {
+      stopWebcamStream();
+      if (recordedVideoUrl) URL.revokeObjectURL(recordedVideoUrl);
+      setRecordedVideoBlob(null);
+      setRecordedVideoUrl(null);
+    }
+    return () => {
+      stopWebcamStream();
+    };
+  }, [showRecordingStudio, selectedDeviceId]);
+
+  const handleStartRecording = () => {
+    if (!mediaStreamRef.current || !selectedVolunteer) {
+      alert('Please select or register a volunteer first.');
+      return;
+    }
+    recordedChunksRef.current = [];
+    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+      ? 'video/webm;codecs=vp9'
+      : MediaRecorder.isTypeSupported('video/webm')
+      ? 'video/webm'
+      : 'video/mp4';
+
+    const recorder = new MediaRecorder(mediaStreamRef.current, { mimeType: mime });
+    mediaRecorderRef.current = recorder;
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        recordedChunksRef.current.push(e.data);
+      }
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(recordedChunksRef.current, { type: mime });
+      setRecordedVideoBlob(blob);
+      const url = URL.createObjectURL(blob);
+      setRecordedVideoUrl(url);
+    };
+
+    recorder.start(100);
+    setIsWebcamRecording(true);
+    setRecordingDuration(0);
+    durationTimerRef.current = window.setInterval(() => {
+      setRecordingDuration((prev) => prev + 0.1);
+    }, 100);
+  };
+
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (durationTimerRef.current) {
+      clearInterval(durationTimerRef.current);
+    }
+    setIsWebcamRecording(false);
+  };
+
+  const handleRetryRecording = () => {
+    if (recordedVideoUrl) URL.revokeObjectURL(recordedVideoUrl);
+    setRecordedVideoBlob(null);
+    setRecordedVideoUrl(null);
+    setRecordingDuration(0);
+  };
+
+  const handleAcceptRecording = async () => {
+    if (!recordedVideoBlob || !selectedVolunteer) return;
+    setIsUploadingRecording(true);
+    try {
+      const isIdle = selectedRecordSign === 'idle';
+      let nextRep = 1;
+      if (!isIdle) {
+        const nextInfo = await fetchNextRepIndex(selectedVolunteer, selectedRecordSign);
+        nextRep = nextInfo.next_rep_idx;
+      }
+
+      const reader = new FileReader();
+      const b64Promise = new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(recordedVideoBlob);
+      const b64 = await b64Promise;
+
+      await uploadIndependentRecording({
+        volunteer_id: selectedVolunteer,
+        sign_id: selectedRecordSign,
+        rep_idx: nextRep,
+        is_idle: isIdle,
+        video_base64: b64,
+      });
+
+      handleRetryRecording();
+      await loadIndEval();
+      alert('Recording accepted and saved successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to save recording');
+    } finally {
+      setIsUploadingRecording(false);
+    }
+  };
+
+  const handleDeleteVolunteer = async (volId: string) => {
+    if (
+      !confirm(
+        `Are you sure you want to permanently delete all local data and recordings for ${volId}? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await deleteIndependentVolunteer(volId);
+      setSelectedVolunteer('');
+      await loadIndEval();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete volunteer');
+    }
+  };
 
   // Volunteer Action Handlers
   const handleRegisterVolunteer = async (e: React.FormEvent) => {
@@ -1277,23 +1471,277 @@ export const TrainModelPage: React.FC<TrainModelPageProps> = ({
         </div>
 
         {/* Action Toolbar */}
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleRunIndEvaluation}
-            disabled={isIndEvalBusy}
-            className="px-4 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg text-xs font-semibold transition-all shadow-md flex items-center space-x-1.5 disabled:opacity-50"
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>Run Frozen Evaluation (SVM vs CNN)</span>
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-[#101419] p-3 rounded-xl border border-[#2B3442]">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setShowRecordingStudio(!showRecordingStudio)}
+              className="px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white rounded-lg text-xs font-semibold transition-all shadow-md flex items-center space-x-1.5"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>{showRecordingStudio ? 'Hide Camera Studio' : '📹 Record Volunteer Signs'}</span>
+            </button>
 
-          {isIndEvalBusy && (
-            <div className="flex items-center space-x-2 text-xs text-[#A78BFA] font-medium ml-2">
-              <RotateCw className="w-3.5 h-3.5 animate-spin" />
-              <span>{indEvalActionText}</span>
-            </div>
-          )}
+            <button
+              onClick={handleRunIndEvaluation}
+              disabled={isIndEvalBusy}
+              className="px-4 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg text-xs font-semibold transition-all shadow-md flex items-center space-x-1.5 disabled:opacity-50"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>Run Frozen Evaluation (SVM vs CNN)</span>
+            </button>
+
+            {isIndEvalBusy && (
+              <div className="flex items-center space-x-2 text-xs text-[#A78BFA] font-medium ml-2">
+                <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                <span>{indEvalActionText}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setConsentModalOpen(true)}
+              className="px-3 py-1.5 text-xs text-[#94A3B8] hover:text-[#F3F4F6] border border-[#2B3442] hover:border-[#8B5CF6] rounded-lg transition-colors flex items-center space-x-1.5"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-[#8B5CF6]" />
+              <span>Privacy & Consent Notice</span>
+            </button>
+
+            {selectedVolunteer && (
+              <button
+                onClick={() => handleDeleteVolunteer(selectedVolunteer)}
+                className="px-3 py-1.5 text-xs text-[#EF4444] hover:bg-[#EF4444]/10 border border-[#EF4444]/30 rounded-lg transition-colors flex items-center space-x-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Volunteer Data</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* ── Interactive Web Camera Recording Studio ── */}
+        {showRecordingStudio && (
+          <div className="bg-[#101419] border border-[#7C3AED]/40 rounded-xl p-5 space-y-4 animate-fade-in shadow-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#2B3442] pb-3">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-[#7C3AED]/20 text-[#A78BFA] flex items-center justify-center">
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-[#F3F4F6]">
+                    Volunteer Recording Studio — Live Camera Viewport
+                  </h4>
+                  <p className="text-[11px] text-[#94A3B8]">
+                    Record 5 repetitions per sign • Review clip before accepting • Local storage isolation
+                  </p>
+                </div>
+              </div>
+
+              {/* Sign Selector */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <label className="text-[#94A3B8]">Sign to Record:</label>
+                <select
+                  value={selectedRecordSign}
+                  onChange={(e) => setSelectedRecordSign(e.target.value)}
+                  className="bg-[#1B2330] border border-[#2B3442] rounded-lg px-2.5 py-1.5 text-xs text-[#F3F4F6] focus:outline-none"
+                >
+                  {signReferences.map((s) => (
+                    <option key={s.sign_id} value={s.sign_id}>
+                      {s.sign_id}: {s.name_ar} ({s.name_en})
+                    </option>
+                  ))}
+                  <option value="idle">idle: استراحة / خمول (Resting Baseline)</option>
+                </select>
+
+                {availableVideoDevices.length > 1 && (
+                  <select
+                    value={selectedDeviceId}
+                    onChange={(e) => setSelectedDeviceId(e.target.value)}
+                    className="bg-[#1B2330] border border-[#2B3442] rounded-lg px-2.5 py-1.5 text-xs text-[#F3F4F6] focus:outline-none"
+                  >
+                    {availableVideoDevices.map((d, i) => (
+                      <option key={d.deviceId || i} value={d.deviceId}>
+                        {d.label || `Camera ${i + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {/* Pose Guide Card */}
+            {(() => {
+              const curSign = signReferences.find((s) => s.sign_id === selectedRecordSign);
+              const isIdle = selectedRecordSign === 'idle';
+              const nameAr = isIdle ? 'استراحة / خمول' : curSign?.name_ar || 'غير معروف';
+              const nameEn = isIdle ? 'Idle Resting Baseline' : curSign?.name_en || '';
+              const tipAr = isIdle
+                ? 'الجلوس باسترخاء أمام الكاميرا دون حركة لقياس عدم التنبؤ الكاذب.'
+                : curSign?.tip_ar || '';
+              const repsDone =
+                volunteerProgress?.progress_by_sign?.[selectedRecordSign]?.reps_completed || 0;
+
+              return (
+                <div className="bg-[#1E1B4B]/60 border border-[#4338CA]/60 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div>
+                    <span className="font-bold font-arabic text-sm text-[#A5B4FC] mr-2">
+                      {nameAr} ({nameEn})
+                    </span>
+                    <span className="text-[#CBD5E1] block mt-0.5">{tipAr}</span>
+                  </div>
+                  {!isIdle && (
+                    <span
+                      className={`px-3 py-1 rounded font-semibold text-xs ${
+                        repsDone >= 5
+                          ? 'bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/40'
+                          : 'bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/40'
+                      }`}
+                    >
+                      Completed: {repsDone} / 5 Reps
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Viewport Area: Live Camera vs Review Playback */}
+            <div className="relative bg-black rounded-xl overflow-hidden aspect-video max-h-96 flex items-center justify-center border border-[#2B3442]">
+              {recordedVideoUrl ? (
+                <video
+                  src={recordedVideoUrl}
+                  controls
+                  autoPlay
+                  loop
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <video
+                  ref={webVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-contain -scale-x-100"
+                />
+              )}
+
+              {/* Live Recording Badge */}
+              {isWebcamRecording && (
+                <div className="absolute top-3 left-3 bg-[#EF4444] text-white px-3 py-1 rounded-full text-xs font-bold flex items-center space-x-1.5 shadow-lg animate-pulse">
+                  <span className="w-2 h-2 rounded-full bg-white"></span>
+                  <span>REC ({recordingDuration.toFixed(1)}s)</span>
+                </div>
+              )}
+            </div>
+
+            {/* Recording Controls & Review Action Buttons */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <div className="flex items-center space-x-3">
+                {recordedVideoUrl ? (
+                  <>
+                    <button
+                      onClick={handleAcceptRecording}
+                      disabled={isUploadingRecording}
+                      className="px-4 py-2 bg-[#10B981] hover:bg-[#059669] text-white rounded-lg text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 disabled:opacity-50"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>{isUploadingRecording ? 'Saving MP4...' : '✅ Accept & Save Recording'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleRetryRecording}
+                      disabled={isUploadingRecording}
+                      className="px-4 py-2 bg-[#1B2330] hover:bg-[#242E3E] text-[#F3F4F6] border border-[#2B3442] rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>🔄 Retry Take</span>
+                    </button>
+
+                    <button
+                      onClick={handleRetryRecording}
+                      disabled={isUploadingRecording}
+                      className="px-3 py-2 text-xs text-[#EF4444] hover:bg-[#EF4444]/10 rounded-lg transition-colors"
+                    >
+                      Discard
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {!isWebcamRecording ? (
+                      <button
+                        onClick={handleStartRecording}
+                        className="px-5 py-2.5 bg-[#EF4444] hover:bg-[#DC2626] text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center space-x-2"
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full bg-white"></span>
+                        <span>Start Recording</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleStopRecording}
+                        className="px-5 py-2.5 bg-[#1B2330] hover:bg-[#242E3E] text-[#EF4444] border border-[#EF4444] rounded-lg text-xs font-bold transition-all shadow-lg flex items-center space-x-2"
+                      >
+                        <span className="w-2.5 h-2.5 rounded-sm bg-[#EF4444]"></span>
+                        <span>Stop Recording</span>
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="text-xs text-[#94A3B8]">
+                {recordedVideoUrl ? (
+                  <span className="text-[#10B981]">
+                    Review the video playback above. Ensure the sign is cleanly performed before accepting.
+                  </span>
+                ) : isWebcamRecording ? (
+                  <span className="text-[#EF4444]">
+                    Recording active... Perform the sign clearly in frame.
+                  </span>
+                ) : (
+                  <span>Camera active. Frame hands in front of the lens and click Start Recording.</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Privacy & Consent Modal ── */}
+        {consentModalOpen && consentData && (
+          <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+            <div className="bg-[#151B24] border border-[#2B3442] rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-[#2B3442] pb-3">
+                <div className="flex items-center space-x-2">
+                  <ShieldCheck className="w-5 h-5 text-[#8B5CF6]" />
+                  <h3 className="text-sm font-bold text-[#F3F4F6]">{consentData.title_ar}</h3>
+                </div>
+                <button
+                  onClick={() => setConsentModalOpen(false)}
+                  className="text-xs text-[#94A3B8] hover:text-[#F3F4F6]"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs leading-relaxed">
+                <div className="bg-[#101419] p-3 rounded-lg border border-[#2B3442] font-arabic text-[#F3F4F6]">
+                  {consentData.body_ar}
+                </div>
+                <div className="bg-[#101419] p-3 rounded-lg border border-[#2B3442] text-[#94A3B8]">
+                  {consentData.body_en}
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={() => setConsentModalOpen(false)}
+                  className="px-4 py-2 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white rounded-lg text-xs font-semibold"
+                >
+                  Understood & Closed
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* Status Callout if Pending */}
         {!indEvalStatus?.is_evaluated && (

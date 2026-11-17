@@ -334,4 +334,92 @@ export async function runIndependentEvaluation(): Promise<IndependentEvalStatus>
   return res.json();
 }
 
+export interface SignReferenceInfo {
+  sign_id: string;
+  class_idx: number;
+  name_ar: string;
+  name_en: string;
+  tip_ar: string;
+  tip_en: string;
+  target_reps: number;
+}
+
+export interface ConsentNotice {
+  title_ar: string;
+  title_en: string;
+  body_ar: string;
+  body_en: string;
+}
+
+export async function fetchConsentNotice(): Promise<ConsentNotice> {
+  const res = await fetch(`${API_BASE}/api/research/independent-eval/consent`);
+  return res.json();
+}
+
+export async function fetchSignReferences(): Promise<SignReferenceInfo[]> {
+  const res = await fetch(`${API_BASE}/api/research/independent-eval/signs`);
+  return res.json();
+}
+
+export async function fetchNextRepIndex(
+  volunteerId: string,
+  signId: string
+): Promise<{ volunteer_id: string; sign_id: string; next_rep_idx: number }> {
+  const res = await fetch(
+    `${API_BASE}/api/research/independent-eval/volunteers/${volunteerId}/next-rep/${signId}`
+  );
+  return res.json();
+}
+
+export async function deleteIndependentVolunteer(
+  volunteerId: string
+): Promise<{ success: boolean; volunteer_id: string; deleted_recordings_count: number }> {
+  const res = await fetch(
+    `${API_BASE}/api/research/independent-eval/volunteers/${volunteerId}`,
+    { method: 'DELETE' }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to delete volunteer');
+  }
+  return res.json();
+}
+
+export async function deleteIndependentRecording(
+  recordId: string
+): Promise<{ success: boolean; record_id: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/research/independent-eval/recordings/${recordId}`,
+    { method: 'DELETE' }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to delete recording');
+  }
+  return res.json();
+}
+
+export async function uploadIndependentRecording(payload: {
+  volunteer_id: string;
+  sign_id: string;
+  rep_idx: number;
+  is_idle?: boolean;
+  video_base64: string;
+}): Promise<{ success: boolean; recording: any }> {
+  const res = await fetch(
+    `${API_BASE}/api/research/independent-eval/recordings/upload`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to upload evaluation recording');
+  }
+  return res.json();
+}
+
+
 

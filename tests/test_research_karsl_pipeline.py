@@ -373,3 +373,150 @@ def test_independent_evaluation_fastapi_endpoints() -> None:
         json.dump(remaining_vols, f, ensure_ascii=False, indent=2)
 
 
+def test_independent_eval_paths_and_traversal_protection(tmp_path: pytest.TempPathFactory) -> None:
+    from src.research.independent_evaluation import IndependentEvaluationManager
+    mgr = IndependentEvaluationManager(base_dir=tmp_path / "ind_eval_paths")
+
+    # 1. Normal resolution
+    safe_rel = "recordings/vol_001/sign_0001_rep01.mp4"
+    resolved = mgr.resolve_recording_path(safe_rel)
+    assert resolved.is_absolute()
+    assert str(mgr.base_dir.resolve()) in str(resolved)
+
+    # 2. Path traversal rejection
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        mgr.resolve_recording_path("../../windows/system32/cmd.exe")
+
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        mgr.resolve_recording_path("recordings/../../secret.txt")
+
+
+def test_inner_train_val_split_zero_leakage(dataset_manager: KArSLDatasetManager) -> None:
+    # 1. Outer split
+    splits = dataset_manager.load_loso_splits()
+    s03 = splits["test_Signer03"]
+    test_indices = set(s03["test_indices"])
+
+    # 2. Inner split
+    inner_split = dataset_manager.get_inner_train_val_split(val_fraction=0.2)
+    inner_train_idx = inner_split["inner_train_indices"]
+    inner_val_idx = inner_split["inner_val_indices"]
+    inner_train_set = set(inner_train_idx)
+    inner_val_set = set(inner_val_idx)
+
+    # Assert zero intersection between inner train and inner val
+    assert inner_train_set.isdisjoint(inner_val_set)
+
+    # Assert ZERO intersection with outer test set (Signer03)
+    assert inner_train_set.isdisjoint(test_indices)
+    assert inner_val_set.isdisjoint(test_indices)
+
+    # Combined inner set must be exactly equal to outer training indices
+    assert inner_train_set.union(inner_val_set) == set(s03["train_indices"])
+
+
+def test_independent_eval_duplicate_rep_and_deletion(tmp_path: pytest.TempPathFactory) -> None:
+    from src.research.independent_evaluation import IndependentEvaluationManager
+    mgr = IndependentEvaluationManager(base_dir=tmp_path / "ind_eval_dups")
+
+    vol = mgr.register_volunteer("Volunteer Rep Test", "Laptop Webcam")
+    vol_id = vol["volunteer_id"]
+
+    # Next rep index before any recording
+    assert mgr.get_next_repetition_index(vol_id, "0001") == 1
+
+    # Save rep 1
+    dummy_frames = [np.zeros((100, 100, 3), dtype=np.uint8) for _ in range(5)]
+    mgr.save_recording(vol_id, "0001", rep_idx=1, frames=dummy_frames)
+
+    # Next rep index should now be 2
+    assert mgr.get_next_repetition_index(vol_id, "0001") == 2
+
+    # Save rep 2
+    mgr.save_recording(vol_id, "0001", rep_idx=2, frames=dummy_frames)
+    assert mgr.get_next_repetition_index(vol_id, "0001") == 3
+
+    # Delete recording
+    recs = mgr.load_manifest()
+    assert len(recs) == 2
+    mgr.delete_recording(recs[0]["record_id"])
+
+    # Manifest now has 1 recording
+    assert len(mgr.load_manifest()) == 1
+
+    # Delete volunteer deletes all recordings and directory
+    del_res = mgr.delete_volunteer(vol_id)
+    assert del_res["success"] is True
+    assert len(mgr.list_volunteers()) == 0
+    assert len(mgr.load_manifest()) == 0
+
+
+def test_independent_eval_metric_disentanglement(tmp_path: pytest.TempPathFactory) -> None:
+    from src.research.independent_evaluation import IndependentEvaluationManager
+    mgr = IndependentEvaluationManager(base_dir=tmp_path / "ind_eval_metrics")
+
+    # Test with no recordings: idle false positives must be NOT_EVALUATED
+    results = mgr.evaluate_independent_dataset()
+    assert results["total_recordings"] == 0
+    assert results["idle_recordings"] == 0
+    assert results["idle_false_positives"]["display"] == "Not Evaluated"
+    assert results["idle_false_positives"]["status"] == "NOT_EVALUATED"
+
+
+def test_independent_eval_consent_and_signs_api() -> None:
+    import base64
+    client = TestClient(app)
+
+    # 1. GET consent
+    res = client.get("/api/research/independent-eval/consent")
+    assert res.status_code == 200
+    consent_data = res.json()
+    assert "title_en" in consent_data
+    assert "title_ar" in consent_data
+    assert "privacy_principles" in consent_data
+
+    # 2. GET signs
+    res_signs = client.get("/api/research/independent-eval/signs")
+    assert res_signs.status_code == 200
+    signs_data = res_signs.json()
+    assert len(signs_data) == 10  # 10 predefined Arabic digits (0-9)
+
+    # 3. GET single sign (digit and idle baseline)
+    res_single = client.get("/api/research/independent-eval/signs/0001")
+    assert res_single.status_code == 200
+    assert res_single.json()["sign_id"] == "0001"
+
+    res_idle = client.get("/api/research/independent-eval/signs/idle")
+    assert res_idle.status_code == 200
+    assert res_idle.json()["sign_id"] == "idle"
+
+    # 4. Upload base64 recording via API
+    v_res = client.post("/api/research/independent-eval/volunteers", json={"name": "API Upload Test"})
+    v_id = v_res.json()["volunteer_id"]
+
+    try:
+        mock_video_bytes = b"MOCK_MP4_HEADER_DATA_1234567890"
+        b64_str = base64.b64encode(mock_video_bytes).decode("ascii")
+
+        up_res = client.post(
+            "/api/research/independent-eval/recordings/upload",
+            json={
+                "volunteer_id": v_id,
+                "sign_id": "idle",
+                "rep_idx": 1,
+                "video_base64": b64_str,
+                "filename": "idle_rep01.webm",
+                "camera_device": "Laptop Webcam",
+                "notes": "API test upload",
+            },
+        )
+        assert up_res.status_code == 200
+        up_data = up_res.json()
+        assert up_data["success"] is True
+        assert up_data["record"]["sign_id"] == "idle"
+    finally:
+        # 5. Delete temporary volunteer and verify cleanup
+        client.delete(f"/api/research/independent-eval/volunteers/{v_id}")
+
+
+

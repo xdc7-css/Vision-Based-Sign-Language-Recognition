@@ -376,3 +376,64 @@ class KArSLDatasetManager:
         with open(split_file, "r", encoding="utf-8") as f:
             return json.load(f)
 
+    def get_inner_train_val_split(
+        self,
+        loso_fold: str = "test_Signer03",
+        inner_val_ratio: float = 0.2,
+        val_fraction: Optional[float] = None,
+        random_state: int = 42,
+    ) -> dict[str, Any]:
+        """Return strictly isolated inner-training and inner-validation partitions from training signers only.
+
+        The held-out test signer is NEVER included in training or validation partitions.
+        Zero data leakage guaranteed.
+        """
+        if val_fraction is not None:
+            inner_val_ratio = val_fraction
+        from sklearn.model_selection import StratifiedShuffleSplit
+
+        X_all, y_all, signers_all = self.load_features()
+        splits = self.load_loso_splits()
+        if loso_fold not in splits:
+            raise KeyError(f"Fold '{loso_fold}' not found in splits: {list(splits.keys())}")
+
+        fold_info = splits[loso_fold]
+        train_idx = np.array(fold_info["train_indices"])
+        test_idx = np.array(fold_info["test_indices"])
+        test_signer = fold_info.get("test_signer", fold_info.get("held_out_signer", "Unknown"))
+        train_signers = fold_info.get("train_signers", [])
+
+        # Invariant 1: Ensure zero overlap between outer train and outer test
+        if len(np.intersect1d(train_idx, test_idx)) > 0:
+            raise AssertionError("FATAL LEAKAGE: train_indices and test_indices overlap!")
+        if test_signer in train_signers:
+            raise AssertionError(f"FATAL LEAKAGE: test_signer {test_signer} present in train_signers!")
+
+        X_train_full = X_all[train_idx]
+        y_train_full = y_all[train_idx]
+
+        sss = StratifiedShuffleSplit(n_splits=1, test_size=inner_val_ratio, random_state=random_state)
+        inner_train_rel, inner_val_rel = next(sss.split(X_train_full, y_train_full))
+
+        inner_train_idx = train_idx[inner_train_rel]
+        inner_val_idx = train_idx[inner_val_rel]
+
+        # Invariant 2: Inner partitions must strictly exclude held-out test signer
+        assert np.intersect1d(inner_train_idx, test_idx).size == 0, "Inner train contaminated with test indices!"
+        assert np.intersect1d(inner_val_idx, test_idx).size == 0, "Inner val contaminated with test indices!"
+        assert test_signer not in signers_all[inner_train_idx], f"Test signer {test_signer} found in inner train!"
+        assert test_signer not in signers_all[inner_val_idx], f"Test signer {test_signer} found in inner val!"
+
+        return {
+            "test_signer": test_signer,
+            "train_signers": train_signers,
+            "inner_train_indices": inner_train_idx,
+            "inner_val_indices": inner_val_idx,
+            "outer_test_indices": test_idx,
+            "X_inner_train": X_all[inner_train_idx],
+            "y_inner_train": y_all[inner_train_idx],
+            "X_inner_val": X_all[inner_val_idx],
+            "y_inner_val": y_all[inner_val_idx],
+        }
+
+
