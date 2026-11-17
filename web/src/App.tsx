@@ -89,6 +89,7 @@ export const App: React.FC = () => {
           <RecognizePage
             activeModel={activeModel}
             onNavigateToTeach={() => setActiveTab('teach')}
+            onModelChanged={refreshActiveModel}
             confidenceThreshold={confidenceThreshold}
             autoSpeak={autoSpeak}
             speechRate={speechRate}

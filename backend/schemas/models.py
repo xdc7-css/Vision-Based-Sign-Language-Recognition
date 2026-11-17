@@ -92,6 +92,7 @@ class TrainingJobStatus(BaseModel):
 # ── Models ───────────────────────────────────────────────────────────────
 
 class ActiveModelResponse(BaseModel):
+    id: str = "multimodal"
     name: str
     model_type: str
     classes: list[str]
@@ -99,6 +100,10 @@ class ActiveModelResponse(BaseModel):
     accuracy: Optional[float] = None
     is_trained: bool = False
     updated_at: Optional[float] = None
+
+
+class ModelSelectRequest(BaseModel):
+    model_id: str
 
 
 # ── System ───────────────────────────────────────────────────────────────

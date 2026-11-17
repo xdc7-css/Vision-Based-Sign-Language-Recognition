@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.api.dataset import router as dataset_router
 from backend.api.gestures import router as gestures_router
 from backend.api.models import router as models_router
+from backend.api.research import router as research_router
 from backend.api.stream import router as stream_router
 from backend.api.system import router as system_router
 from backend.api.training import router as training_router
@@ -60,6 +61,7 @@ app.include_router(gestures_router)
 app.include_router(dataset_router)
 app.include_router(models_router)
 app.include_router(training_router)
+app.include_router(research_router)
 app.include_router(stream_router)
 
 # Mount React static frontend if built

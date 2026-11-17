@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Volume2, Delete, Trash2, ArrowRight, Sparkles, CheckCircle2, Activity, ChevronDown, ChevronUp } from 'lucide-react';
+import { Volume2, Delete, Trash2, ArrowRight, Sparkles, CheckCircle2, Activity, ChevronDown, ChevronUp, Layers } from 'lucide-react';
 import { CameraViewport } from '../components/CameraViewport';
-import { deleteSentenceWord, clearSentence } from '../services/api';
-import type { ActiveModelInfo, RecognitionStreamResult } from '../types';
+import { deleteSentenceWord, clearSentence, fetchAvailableModels, selectActiveModel } from '../services/api';
+import type { ActiveModelInfo, RecognitionStreamResult, AvailableModel } from '../types';
 
 interface RecognizePageProps {
   activeModel: ActiveModelInfo | null;
   onNavigateToTeach: () => void;
+  onModelChanged?: () => void;
   confidenceThreshold: number;
   autoSpeak: boolean;
   speechRate: number;
@@ -26,6 +27,7 @@ async function packFramePayload(blob: Blob, frameId: number, timestamp: number):
 export const RecognizePage: React.FC<RecognizePageProps> = ({
   activeModel,
   onNavigateToTeach,
+  onModelChanged,
   confidenceThreshold,
   autoSpeak,
   speechRate,
@@ -36,6 +38,28 @@ export const RecognizePage: React.FC<RecognizePageProps> = ({
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [sentenceText, setSentenceText] = useState<string>('');
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
+
+  // Available models & switching
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
+  const [isSwitchingModel, setIsSwitchingModel] = useState<boolean>(false);
+
+  useEffect(() => {
+    fetchAvailableModels()
+      .then((data) => setAvailableModels(Array.isArray(data) ? data : []))
+      .catch((err) => console.error('Failed to load available models:', err));
+  }, []);
+
+  const handleModelSelect = async (modelId: string) => {
+    setIsSwitchingModel(true);
+    try {
+      await selectActiveModel(modelId);
+      onModelChanged?.();
+    } catch (err) {
+      console.error('Failed to switch model:', err);
+    } finally {
+      setIsSwitchingModel(false);
+    }
+  };
 
   // Latency & Telemetry stats
   const latencySamplesRef = useRef<number[]>([]);
@@ -243,18 +267,56 @@ export const RecognizePage: React.FC<RecognizePageProps> = ({
               </span>
             </div>
             <p className="text-xs text-[#94A3B8]">
-              Perform Arabic sign language gestures in front of the camera for real-time stabilized recognition
+              {activeModel?.id === 'research_svm'
+                ? 'Academic Benchmark: Support Vector Machine (RBF) on KArSL-502 subset'
+                : activeModel?.id === 'research_cnn'
+                ? 'Academic Benchmark: 1D Temporal CNN on KArSL-502 sequence subset'
+                : 'Perform Arabic sign language gestures in front of the camera for real-time stabilized recognition'}
             </p>
           </div>
         </div>
 
-        <button
-          onClick={onNavigateToTeach}
-          className="flex items-center space-x-2 px-4 py-2 bg-[#1B2330] hover:bg-[#222C3D] text-[#14B8A6] border border-[#14B8A6]/30 hover:border-[#14B8A6] rounded-lg text-xs font-semibold transition-all shadow-sm"
-        >
-          <span>Teach Signs</span>
-          <ArrowRight className="w-4 h-4" />
-        </button>
+        <div className="flex items-center space-x-3">
+          {/* Active Model Selector */}
+          <div className="flex items-center space-x-2 bg-[#1B2330] border border-[#2B3442] rounded-lg px-2.5 py-1.5">
+            <Layers className="w-3.5 h-3.5 text-[#14B8A6]" />
+            <span className="text-xs text-[#94A3B8] hidden sm:inline">Model:</span>
+            <select
+              value={activeModel?.id || 'multimodal'}
+              onChange={(e) => handleModelSelect(e.target.value)}
+              disabled={isSwitchingModel}
+              className="bg-transparent text-xs font-semibold text-[#F3F4F6] focus:outline-none cursor-pointer"
+            >
+              {availableModels.length > 0 ? (
+                availableModels.map((m) => (
+                  <option key={m.id} value={m.id} className="bg-[#1B2330] text-[#F3F4F6]">
+                    {m.name} {m.is_trained ? `(${m.num_classes} signs)` : '(not trained)'}
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="multimodal" className="bg-[#1B2330] text-[#F3F4F6]">
+                    Iraqi Multimodal (53 Signs)
+                  </option>
+                  <option value="research_svm" className="bg-[#1B2330] text-[#F3F4F6]">
+                    Research Model A: SVM (12 Signs)
+                  </option>
+                  <option value="research_cnn" className="bg-[#1B2330] text-[#F3F4F6]">
+                    Research Model B: 1D CNN (12 Signs)
+                  </option>
+                </>
+              )}
+            </select>
+          </div>
+
+          <button
+            onClick={onNavigateToTeach}
+            className="flex items-center space-x-2 px-4 py-2 bg-[#1B2330] hover:bg-[#222C3D] text-[#14B8A6] border border-[#14B8A6]/30 hover:border-[#14B8A6] rounded-lg text-xs font-semibold transition-all shadow-sm"
+          >
+            <span>Teach Signs</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Main Two-Column Layout */}

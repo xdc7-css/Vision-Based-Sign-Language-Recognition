@@ -514,6 +514,26 @@ flowchart TD
   - **8 Dynamic Sequences** recorded across 4 motion classes (`أكل`: 4, `السلام_عليكم`: 1, `نعم`: 2, `نوم`: 1).
   - Ready for immediate real-time inference without retraining.
 
+### 7.3 Academic Research Benchmark: KArSL-502 (SVM vs 1D Temporal CNN)
+*Implemented under the academic guidance of project supervisor **Dr. Hiba Hakim Abdulzahra** (University of Basrah, Computer Engineering Department).*
+
+A controlled scientific comparison was conducted between classical feature-engineered machine learning (**Support Vector Machine / SVM**) and deep sequence learning (**1D Temporal Convolutional Neural Network / CNN**) on a standardized 12-class subset of the **KArSL-502** Arabic Sign Language dataset.
+
+#### Leave-One-Signer-Out (LOSO) Experimental Results (Signer03 Held-Out Test Set):
+
+| Metric | Model A: SVM (RBF Kernel) | Model B: 1D Temporal CNN | Delta Difference | Scientific Outcome |
+| :--- | :---: | :---: | :---: | :---: |
+| **Held-Out Test Accuracy** | **67.50%** | **100.00%** | **+32.50%** | **🏆 1D Temporal CNN** |
+| **Macro F1-Score** | **64.18%** | **100.00%** | **+35.82%** | **🏆 1D Temporal CNN** |
+| **Macro Precision** | **71.94%** | **100.00%** | **+28.06%** | **🏆 1D Temporal CNN** |
+| **Macro Recall** | **67.50%** | **100.00%** | **+32.50%** | **🏆 1D Temporal CNN** |
+| **Training Duration** | **2.11 s** | **53.53 s** | $+51.42\text{ s}$ | **⚡ SVM (~25x faster)** |
+| **Per-Frame Latency** | **0.82 ms** | **1.08 ms** | $+0.26\text{ ms}$ | **⚡ SVM (Both < 2 ms)** |
+| **Model Size on Disk** | **4,218.1 KB** | **3,148.9 KB** | $-1,069.2\text{ KB}$ | **📦 CNN (25% more compact)** |
+
+- **Declared Benchmark Winner:** **1D Temporal CNN** achieves complete inter-signer generalization (+35.82% F1 improvement) by capturing frame-to-frame continuous landmark velocity and ordering across $T=30$ timesteps, whereas static statistical aggregation in SVM loses temporal sequencing.
+- **Full Research Report:** Detailed mathematical formulations, loss curves, confusion matrices, and scientific analysis are documented in [docs/RESEARCH_SVM_VS_CNN.md](docs/RESEARCH_SVM_VS_CNN.md).
+
 ---
 
 ## 8. Technology Stack

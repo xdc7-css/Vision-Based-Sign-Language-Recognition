@@ -44,6 +44,7 @@ export interface SampleInfo {
 }
 
 export interface ActiveModelInfo {
+  id?: string;
   name: string;
   model_type: string;
   classes: string[];
@@ -132,4 +133,100 @@ export interface RecognitionStreamResult {
   };
   perf?: RecognitionPerformanceMetrics;
 }
+
+export interface ResearchDatasetStatus {
+  is_prepared: boolean;
+  total_samples: number;
+  num_classes: number;
+  classes: string[];
+  signers: string[];
+  samples_per_signer: Record<string, number>;
+  class_counts: Record<string, number>;
+  has_raw_videos: boolean;
+  raw_video_count: number;
+  has_splits: boolean;
+  feature_dim: number;
+  seq_len: number;
+}
+
+export interface ResearchModelStatus {
+  is_trained: boolean;
+  metrics?: Record<string, any> | null;
+}
+
+export interface ResearchComparisonMetrics {
+  timestamp: number;
+  protocol: string;
+  fold: string;
+  train_signers: string[];
+  test_signer: string;
+  train_samples: number;
+  test_samples: number;
+  num_classes: number;
+  classes: string[];
+  svm: {
+    model_name: string;
+    algorithm: string;
+    input_type: string;
+    accuracy: number;
+    precision_macro: number;
+    recall_macro: number;
+    f1_macro: number;
+    training_time_sec: number;
+    inference_latency_ms: number;
+    model_size_kb: number;
+    test_signer: string;
+  };
+  cnn: {
+    model_name: string;
+    algorithm: string;
+    input_type: string;
+    accuracy: number;
+    precision_macro: number;
+    recall_macro: number;
+    f1_macro: number;
+    training_time_sec: number;
+    inference_latency_ms: number;
+    model_size_kb: number;
+    test_signer: string;
+  };
+  winner: {
+    best_model: string;
+    f1_difference: number;
+    accuracy_difference: number;
+    rationale: string;
+    speed_advantage: string;
+    size_advantage: string;
+  };
+  total_benchmark_time_sec: number;
+  confusion_matrices?: {
+    classes: string[];
+    svm_confusion_matrix: number[][];
+    cnn_confusion_matrix: number[][];
+  };
+}
+
+export interface ResearchStatusResponse {
+  dataset: ResearchDatasetStatus;
+  models: {
+    svm: ResearchModelStatus;
+    cnn: ResearchModelStatus;
+  };
+  comparison: ResearchComparisonMetrics | null;
+  active_job?: {
+    job: string;
+    status: string;
+    error?: string;
+  } | null;
+}
+
+export interface AvailableModel {
+  id: string;
+  name: string;
+  type: string;
+  num_classes: number;
+  is_trained: boolean;
+  is_active: boolean;
+}
+
 
