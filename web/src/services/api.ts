@@ -1,7 +1,10 @@
 import type {
   ActiveModelInfo,
+  AvailableModel,
   DatasetSummary,
   GestureClass,
+  ResearchComparisonMetrics,
+  ResearchStatusResponse,
   SampleInfo,
   TrainingJobStatus,
   TrainingReadiness,
@@ -180,6 +183,90 @@ export async function clearSentence(): Promise<{ sentence: string }> {
 
 export async function fetchSentence(): Promise<{ sentence: string }> {
   const res = await fetch(`${API_BASE}/api/sentence`);
+  return res.json();
+}
+
+// ── Models & Available Models ───────────────────────────────────────────
+
+export async function fetchAvailableModels(): Promise<AvailableModel[]> {
+  const res = await fetch(`${API_BASE}/api/models/available`);
+  return res.json();
+}
+
+export async function selectActiveModel(modelId: string): Promise<{ success: boolean; active_model: ActiveModelInfo }> {
+  const res = await fetch(`${API_BASE}/api/models/select`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_id: modelId }),
+  });
+  return res.json();
+}
+
+// ── Research Endpoints (KArSL-502 SVM vs CNN) ───────────────────────────
+
+export async function fetchResearchStatus(): Promise<ResearchStatusResponse> {
+  const res = await fetch(`${API_BASE}/api/research/status`);
+  return res.json();
+}
+
+export async function prepareResearchDataset(samplesPerSignPerSigner = 15, force = false): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/research/prepare-dataset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ samples_per_sign_per_signer: samplesPerSignPerSigner, force }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || 'Failed to prepare research dataset');
+  }
+  return res.json();
+}
+
+export async function trainResearchSVM(kernel = 'rbf', c = 2.0): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/research/train-svm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kernel, C: c }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || 'Failed to train SVM');
+  }
+  return res.json();
+}
+
+export async function trainResearchCNN(epochs = 35, batchSize = 16): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/research/train-cnn`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ epochs, batch_size: batchSize }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || 'Failed to train CNN');
+  }
+  return res.json();
+}
+
+export async function runResearchComparison(fold = 'test_Signer03'): Promise<ResearchComparisonMetrics> {
+  const res = await fetch(`${API_BASE}/api/research/compare`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fold }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || 'Failed to run comparison');
+  }
+  return res.json();
+}
+
+export async function fetchResearchComparison(): Promise<ResearchComparisonMetrics> {
+  const res = await fetch(`${API_BASE}/api/research/comparison`);
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || 'Failed to fetch comparison');
+  }
   return res.json();
 }
 

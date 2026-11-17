@@ -49,3 +49,10 @@ test_output.txt
 test_output_verbose.txt
 test_overlay_output.txt
 data/diagnostics/
+
+# Research Raw Video Archives (Exclude large/restricted raw video files)
+data/research/karsl/raw/
+*.mp4
+*.avi
+*.mov
+*.mkv

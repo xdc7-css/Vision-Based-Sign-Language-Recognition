@@ -88,9 +88,11 @@ class SignRecognitionWorker(QThread):
         )
         self._multimodal_renderer = MultimodalRenderer()
         self._multimodal_recognizer = MultimodalSignRecognizer()
+        self._research_svm = None
+        self._research_cnn = None
 
         # Configurable processing parameters
-        self.active_engine = "karsl"  # "karsl", "custom", or "multimodal"
+        self.active_engine = "karsl"  # "karsl", "custom", "multimodal", "research_svm", "research_cnn"
         self.mirror = True
         self.show_landmarks = True
         self.confidence_threshold = 0.35
@@ -303,6 +305,72 @@ class SignRecognitionWorker(QThread):
                                 buffer_fill=0,
                                 is_new=False,
                                 decision_path="multimodal_no_hands",
+                            )
+                elif self.active_engine in ("research_svm", "research_cnn"):
+                    model_type = "svm" if self.active_engine == "research_svm" else "cnn"
+                    if model_type == "svm":
+                        if self._research_svm is None:
+                            from src.research.research_recognizer import ResearchSignRecognizer
+                            self._research_svm = ResearchSignRecognizer(model_type="svm")
+                        rec = self._research_svm
+                    else:
+                        if self._research_cnn is None:
+                            from src.research.research_recognizer import ResearchSignRecognizer
+                            self._research_cnn = ResearchSignRecognizer(model_type="cnn")
+                        rec = self._research_cnn
+
+                    mm_frame = self._multimodal_detector.detect(frame)
+                    has_model = rec.is_loaded
+                    vis_info["hands_detected"] = mm_frame.total_hands_detected
+                    vis_info["face_detected"] = mm_frame.has_face
+                    vis_info["pose_detected"] = mm_frame.has_pose
+
+                    if self.show_landmarks:
+                        ann_bgr = self._multimodal_renderer.draw(frame.copy(), mm_frame)
+                        annotated = cv2.cvtColor(ann_bgr, cv2.COLOR_BGR2RGB)
+                    else:
+                        annotated = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                    if not has_model:
+                        karsl_res = KArSLResult(
+                            pred_idx=-1,
+                            arabic_text="",
+                            english_text="",
+                            confidence=0.0,
+                            hand_detected=mm_frame.has_left_hand or mm_frame.has_right_hand,
+                            face_detected=mm_frame.has_face,
+                            pose_detected=mm_frame.has_pose,
+                            buffer_fill=0,
+                            is_new=False,
+                            decision_path=f"research_{model_type}_not_trained",
+                        )
+                    else:
+                        rec_res = rec.process_frame(frame, self.confidence_threshold)
+                        if rec_res and rec_res.is_valid:
+                            karsl_res = KArSLResult(
+                                pred_idx=0,
+                                arabic_text=rec_res.arabic_text,
+                                english_text="",
+                                confidence=rec_res.confidence,
+                                hand_detected=True,
+                                face_detected=mm_frame.has_face,
+                                pose_detected=mm_frame.has_pose,
+                                buffer_fill=len(rec._buffer),
+                                is_new=True,
+                                decision_path=f"research_{model_type}",
+                            )
+                        else:
+                            karsl_res = KArSLResult(
+                                pred_idx=-1,
+                                arabic_text=rec_res.arabic_text if rec_res else "",
+                                english_text="",
+                                confidence=rec_res.confidence if rec_res else 0.0,
+                                hand_detected=mm_frame.has_left_hand or mm_frame.has_right_hand,
+                                face_detected=mm_frame.has_face,
+                                pose_detected=mm_frame.has_pose,
+                                buffer_fill=len(rec._buffer),
+                                is_new=False,
+                                decision_path="research_buffering",
                             )
                 else:
                     annotated = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -632,6 +700,8 @@ class RecognitionTab(QWidget):
         self._engine_selector.addItem("KArSL-502 (502 Standard Signs)", "karsl")
         self._engine_selector.addItem("Iraqi Custom Classifier (Legacy)", "custom")
         self._engine_selector.addItem("Multimodal Iraqi — Hands + Face", "multimodal")
+        self._engine_selector.addItem("Research Model A: SVM (KArSL Subset)", "research_svm")
+        self._engine_selector.addItem("Research Model B: 1D Temporal CNN (KArSL Subset)", "research_cnn")
         model_bar.addWidget(self._engine_selector, stretch=1)
         right_layout.addLayout(model_bar)
 
@@ -1187,6 +1257,50 @@ class RecognitionTab(QWidget):
                 DialectInfo("multimodal", "Multimodal Iraqi (Not Trained)", "عراقية")
             )
 
+    def _update_research_model_status_ui(self, model_type: str) -> None:
+        model_path = Path(f"data/models/research/{model_type}")
+        classes_path = model_path / "classes.json"
+        classes = []
+        if classes_path.exists():
+            try:
+                with open(classes_path, "r", encoding="utf-8") as f:
+                    classes = json.load(f)
+            except Exception:
+                pass
+        if not classes:
+            cpath = Path("data/research/karsl/metadata/classes.json")
+            if cpath.exists():
+                try:
+                    with open(cpath, "r", encoding="utf-8") as f:
+                        classes = json.load(f)
+                except Exception:
+                    pass
+
+        num_classes = len(classes)
+        name = "Research SVM (RBF)" if model_type == "svm" else "Research 1D CNN (Temporal)"
+        if num_classes > 0:
+            self._model_status_badge.setText(f"● {name} ({num_classes} signs)")
+            self._model_status_badge.setStyleSheet(
+                "color: #10B981; font-weight: 600; padding: 4px 10px; background: #064e3b; border-radius: 4px; font-size: 11px;"
+            )
+            self._vocab_btn.setText(f"Research Signs ({num_classes})")
+            self._caption_label.setText("جاهز للترجمة")
+            self._conf_badge.setText("Waiting for sign...")
+            self._state.active_dialect_changed.emit(
+                DialectInfo(f"research_{model_type}", f"{name} ({num_classes} signs)", "عراقية")
+            )
+        else:
+            self._model_status_badge.setText(f"● {name} (Not Trained)")
+            self._model_status_badge.setStyleSheet(
+                "color: #F59E0B; font-weight: 600; padding: 4px 10px; background: #451a03; border-radius: 4px; font-size: 11px;"
+            )
+            self._vocab_btn.setText("Research (0)")
+            self._caption_label.setText("نموذج البحث غير مدرب")
+            self._conf_badge.setText("Research Model Not Trained")
+            self._state.active_dialect_changed.emit(
+                DialectInfo(f"research_{model_type}", f"{name} (Not Trained)", "عراقية")
+            )
+
     def _on_engine_changed(self, index: int) -> None:
         engine = self._engine_selector.currentData()
         self._worker.active_engine = engine
@@ -1196,6 +1310,10 @@ class RecognitionTab(QWidget):
             self._update_custom_model_status_ui()
         elif engine == "multimodal":
             self._update_multimodal_model_status_ui()
+        elif engine == "research_svm":
+            self._update_research_model_status_ui("svm")
+        elif engine == "research_cnn":
+            self._update_research_model_status_ui("cnn")
         else:
             self._model_status_badge.setText("● Pretrained (502 signs)")
             self._model_status_badge.setStyleSheet(
@@ -1283,6 +1401,30 @@ class RecognitionTab(QWidget):
                 })
             dlg = KArSLVocabularyDialog(vocabulary=vocab, parent=self)
             dlg.setWindowTitle(f"Iraqi Custom Sign Language Dictionary ({len(classes)} Signs)")
+            dlg.exec()
+        elif self._worker.active_engine in ("research_svm", "research_cnn"):
+            mtype = "svm" if self._worker.active_engine == "research_svm" else "cnn"
+            classes = []
+            classes_path = Path(f"data/models/research/{mtype}/classes.json")
+            if classes_path.exists():
+                try:
+                    with open(classes_path, "r", encoding="utf-8") as f:
+                        classes = json.load(f)
+                except Exception:
+                    pass
+            if not classes:
+                classes_path = Path("data/research/karsl/metadata/classes.json")
+                if classes_path.exists():
+                    try:
+                        with open(classes_path, "r", encoding="utf-8") as f:
+                            classes = json.load(f)
+                    except Exception:
+                        pass
+            vocab = []
+            for i, c in enumerate(classes):
+                vocab.append((i + 1, c, f"KArSL Benchmark Sign"))
+            dlg = KArSLVocabularyDialog(vocabulary=vocab, parent=self)
+            dlg.setWindowTitle(f"KArSL Research Benchmark Signs ({len(classes)} Signs)")
             dlg.exec()
         else:
             labels_path = Path("data/models/karsl/labels.json")

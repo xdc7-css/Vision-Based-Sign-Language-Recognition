@@ -1,0 +1,62 @@
+{
+  "timestamp": 1794909321.7235894,
+  "protocol": "Leave-One-Signer-Out (LOSO)",
+  "fold": "test_Signer03",
+  "train_signers": [
+    "Signer01",
+    "Signer02"
+  ],
+  "test_signer": "Signer03",
+  "train_samples": 240,
+  "test_samples": 120,
+  "num_classes": 12,
+  "classes": [
+    "صفر",
+    "واحد",
+    "ا",
+    "ب",
+    "يأكل",
+    "يشرب",
+    "ينام",
+    "يحب",
+    "أب",
+    "أم",
+    "أهلا وسهلاً",
+    "السلام عليكم"
+  ],
+  "svm": {
+    "model_name": "Support Vector Machine (SVM)",
+    "algorithm": "Scikit-Learn SVC (RBF Kernel)",
+    "input_type": "Engineered Statistical & Kinematic Features (2,208 dims)",
+    "accuracy": 0.675,
+    "precision_macro": 0.7306,
+    "recall_macro": 0.675,
+    "f1_macro": 0.6418,
+    "training_time_sec": 2.106,
+    "inference_latency_ms": 0.82,
+    "model_size_kb": 4218.1,
+    "test_signer": "Signer03"
+  },
+  "cnn": {
+    "model_name": "1D Temporal CNN",
+    "algorithm": "PyTorch 1D Temporal Convolutional Neural Network",
+    "input_type": "Raw Temporal Landmark Sequences (30 frames x 736 channels)",
+    "accuracy": 1.0,
+    "precision_macro": 1.0,
+    "recall_macro": 1.0,
+    "f1_macro": 1.0,
+    "training_time_sec": 53.527,
+    "inference_latency_ms": 1.08,
+    "model_size_kb": 3148.9,
+    "test_signer": "Signer03"
+  },
+  "winner": {
+    "best_model": "1D Temporal CNN",
+    "f1_difference": 0.3582,
+    "accuracy_difference": 0.325,
+    "rationale": "تفوقت الشبكة الالتفافية 1D Temporal CNN بنسبة F1 أعلى بمقدار (+35.8%) بفضل قدرة طبقات الالتفاف الزمني (Conv1D) على التقاط ديناميكيات حركة الإشارة عبر الإطارات المتعاقبة.",
+    "speed_advantage": "SVM",
+    "size_advantage": "CNN"
+  },
+  "total_benchmark_time_sec": 57.34
+}

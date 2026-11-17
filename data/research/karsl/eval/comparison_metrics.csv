@@ -1,0 +1,8 @@
+﻿Metric,Support Vector Machine (SVM),1D Temporal CNN,Difference (CNN - SVM),Superior Approach
+Test Accuracy,67.50%,100.00%,+32.50%,CNN
+Macro Precision,73.06%,100.00%,+26.94%,CNN
+Macro Recall,67.50%,100.00%,+32.50%,CNN
+Macro F1-Score,64.18%,100.00%,+35.82%,CNN
+Training Time (seconds),2.11s,53.53s,+51.42s,SVM
+Inference Latency (ms/sample),0.82 ms,1.08 ms,+0.26 ms,SVM
+Model File Size (KB),4218.1 KB,3148.9 KB,-1069.2 KB,CNN
